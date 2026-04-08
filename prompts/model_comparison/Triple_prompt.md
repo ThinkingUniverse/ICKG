@@ -108,7 +108,7 @@ Return a **JSON array** of triples. Each triple is a JSON object with the follow
 ```
 
 - `source_sentence`: the single sentence (or minimal clause) from the input abstract that most directly supports the triple. Copy it verbatim from the source text. For triples derived by inference across adjacent sentences, include the most directly relevant sentence.
-- `score`: an integer from 0 to 100 reflecting your confidence that this triple is correctly extracted — considering accuracy of entity typing, relation selection, directionality, and how well the source sentence supports the triple. Score 90–100 for explicitly stated triples with unambiguous typing; 70–89 for implied single-step inferences; 50–69 for implied multi-step inferences; 30–49 for plausible but less certain inferences; below 30 for triples that rely on background knowledge and weak textual support.
+- `score`: an integer from 0 to 100 reflecting your confidence that this triple is correctly extracted — considering accuracy of entity typing, relation selection, directionality, and how well the source sentence supports the triple. Score 90–100 for explicitly stated triples with unambiguous typing; 70–89 for strongly implied single-step inferences; 50–69 for plausible but less certain inferences; below 50 only if retained for completeness despite notable uncertainty.
 - Normalize entity names: use standard nomenclature (e.g., "IL-6" not "interleukin 6", "T cell" not "T lymphocyte")
 - Do not include explanatory text outside the JSON array
 - If the text contains no extractable triples, return an empty array: `[]`
@@ -118,11 +118,10 @@ Return a **JSON array** of triples. Each triple is a JSON object with the follow
 ## Extraction Rules
 
 **Scope — text-grounded extraction with inference permitted:**
-Prioritize relationships that are directly and explicitly stated in the source text (typically scoring 90–100). You may also apply reasoning grounded in the text — including single-step (70–89) and multi-step (50–69) inferences — to extract triples that are plausibly supported by the content. Less certain and weakly supported inferences may be included with moderate confidence (30–49). Triples that rely primarily on background knowledge and have minimal textual support are permitted but should receive a low `score` (below 30). Use the `score` field to transparently communicate your confidence in each extracted triple; do not suppress uncertain triples, but assign scores that accurately reflect their level of support.
-
+Prioritize relationships that are directly and explicitly stated in the source text. You may also apply reasoning grounded in the text — including multi-step inferences and domain-informed interpretations — to extract triples that are plausibly supported by the content. Speculative or background-knowledge-only triples are permitted but should receive a low `score`. Use the `score` field to transparently communicate your confidence in each extracted triple; do not suppress uncertain triples, but do score them honestly.
 
 **Entity extraction:**
-Identify mentions of diseases, phenotypes, chemicals, cell types, species, methods, physiological processes, pathological processes, proteins, anatomical locations, genes, interventions, temporal references, health factors, pathways, and relationships. Assign each identified mention the most specific matching entity type from the predefined list.
+Identify mentions of diseases, phenotypes, cell types, proteins, genes, interventions, chemicals, anatomical locations, methods, physiological and pathological processes, species, temporal references, health factors, pathways, and relationships. Assign each identified mention the most specific matching entity type from the predefined list.
 
 **Relation assignment:**
 For each entity pair where the text states or implies a relationship, assign the most specific and accurate relation type from the predefined list.
