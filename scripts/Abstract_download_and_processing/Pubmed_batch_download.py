@@ -40,15 +40,15 @@ BASE_QUERY = (
     "OR (mast cell))"
 )
 
-GLOBAL_START = date(2021, 1, 1)
-GLOBAL_END   = date(2026, 3, 31)
+GLOBAL_START = date(2016, 1, 1)
+GLOBAL_END   = date(2020, 12, 31)
 
 # PMID 二分的初始范围（覆盖全部 PubMed 记录的安全上界）
 PMID_MIN = 1
 PMID_MAX = 99_999_999
 
-OUTPUT_DIR  = Path("data/pubmed_output")
-LOG_DIR     = Path("log/log_pubmed")
+OUTPUT_DIR  = Path("data/pubmed_output/2016-2020")
+LOG_DIR     = Path("log/log_pubmed/2016-2020")
 MAX_PER_SEG = 9000   # 叶子区间最大记录数（< NCBI 硬限 9999）
 FETCH_BATCH = 500    # 每次 efetch 下载条数
 SAVE_BATCH  = 5000   # 每个 JSON 文件最大记录数
@@ -74,7 +74,7 @@ log = logging.getLogger(__name__)
 # 全局状态（跨递归共享）
 # ─────────────────────────────────────────────
 _buffer:     list[dict] = []
-_file_index: int        = 1
+_file_index: int        = 141
 _downloaded: int        = 0
 
 
