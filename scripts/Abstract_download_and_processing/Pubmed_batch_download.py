@@ -29,8 +29,30 @@ import requests
 # ─────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────
-EMAIL   = "zhousiyu199875@outlook.com"
-API_KEY = "27f5faff627ebe4994e16c01f6e2d1b25309"
+CONFIG_PATH = Path(__file__).with_name("pubmed_config.json")
+
+
+def load_credentials(config_path: Path) -> tuple[str, str]:
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"Missing PubMed config file: {config_path}"
+        ) from exc
+
+    email = str(config.get("email", "")).strip()
+    api_key = str(config.get("api_key", "")).strip()
+
+    if not email:
+        raise ValueError(f"Missing 'email' in {config_path}")
+    if not api_key:
+        raise ValueError(f"Missing 'api_key' in {config_path}")
+
+    return email, api_key
+
+
+EMAIL, API_KEY = load_credentials(CONFIG_PATH)
 
 BASE_QUERY = (
     "(((((((((((((((((leukocyte) OR (monocyte)) OR (lymphocyte)) OR (T cell)) "

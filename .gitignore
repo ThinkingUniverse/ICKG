@@ -1,3 +1,4 @@
 .vscode/
 data/
 log/
+scripts/Abstract_download_and_processing/pubmed_config.json
