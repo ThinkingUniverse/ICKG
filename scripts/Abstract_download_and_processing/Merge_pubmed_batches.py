@@ -55,6 +55,7 @@ def main():
             before = len(merged)
             skipped_dedup    = 0
             skipped_abstract = 0
+            skipped_journal  = 0
 
             for rec in records:
                 pmid = rec.get("PMID", "").strip()
@@ -68,6 +69,13 @@ def main():
                 abstract = rec.get("Abstract", "")
                 if not is_valid_abstract(abstract):
                     skipped_abstract += 1
+                    seen_pmids.add(pmid)   # 仍标记为已见，防止从另一目录重复引入
+                    continue
+
+                # ── Journal 过滤：删除 bioRxiv 预印本 ──
+                journal = rec.get("Journal", "")
+                if journal == "bioRxiv : the preprint server for biology":
+                    skipped_journal += 1
                     seen_pmids.add(pmid)   # 仍标记为已见，防止从另一目录重复引入
                     continue
 
@@ -87,7 +95,8 @@ def main():
                 f"  {batch_path.name}: {len(records)} total | "
                 f"+{added} kept | "
                 f"{skipped_dedup} dedup | "
-                f"{skipped_abstract} abstract filtered"
+                f"{skipped_abstract} abstract filtered | "
+                f"{skipped_journal} bioRxiv filtered"
             )
 
     # ── 统一填写 ID（1-based，按最终顺序） ──
