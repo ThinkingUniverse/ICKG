@@ -1,4 +1,4 @@
-"""Batch triple extraction with Baichuan-M3-Plus API.
+"""Batch triple extraction with Baichuan-M3 API.
 
 This script reads PubMed records, uses a markdown prompt template,
 extracts triples from title+abstract text, and appends results to JSONL.
@@ -76,13 +76,15 @@ def sanitize_prompt_template(raw_prompt: str) -> str:
 	return raw_prompt.strip()
 
 
-def build_system_prompt(template_without_input: str) -> str:
-	return (
-		f"{template_without_input}\n\n"
-		"Hard constraints:\n"
-		"1. Only use predefined entity types and predefined relation types from this prompt.\n"
-		"2. Output must be a JSON array only; do not add any explanatory text.\n"
-	)
+def build_system_prompt(template_without_input: str, use_hard_constraints: bool) -> str:
+	prompt = f"{template_without_input}\n"
+	if use_hard_constraints:
+		prompt += (
+			"\nHard constraints:\n"
+			"1. Only use predefined entity types and predefined relation types from this prompt.\n"
+			"2. Output must be a JSON array only; do not add any explanatory text.\n"
+		)
+	return prompt
 
 
 def build_user_prompt(input_text: str) -> str:
@@ -176,7 +178,7 @@ def call_baichuan(
 	max_tokens: int,
 	timeout_sec: int,
 	thinking_budget_tokens: int,
-) -> tuple[str, Dict[str, Any], Dict[str, Any]]:
+) -> tuple[str, Dict[str, Any]]:
 	headers = {
 		"Content-Type": "application/json",
 		"Authorization": f"Bearer {api_key}",
@@ -212,11 +214,8 @@ def call_baichuan(
 	usage = body.get("usage", {})
 	if not isinstance(usage, dict):
 		usage = {}
-	thinking = body.get("thinking", {})
-	if not isinstance(thinking, dict):
-		thinking = {}
 
-	return content, usage, thinking
+	return content, usage
 
 
 def extract_with_retry(
@@ -234,12 +233,11 @@ def extract_with_retry(
 	timeout_sec: int,
 	thinking_budget_tokens: int,
 ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
-	last_thinking: Dict[str, Any] = {}
 	last_error = "Unknown error"
 
 	for attempt in range(1, max_retries + 1):
 		try:
-			model_text, usage, thinking = call_baichuan(
+			model_text, usage = call_baichuan(
 				session=session,
 				api_key=api_key,
 				model=model,
@@ -253,8 +251,7 @@ def extract_with_retry(
 				thinking_budget_tokens=thinking_budget_tokens,
 			)
 			triples = parse_triples_json(model_text)
-			last_thinking = thinking
-			return triples, {"usage": usage, "thinking": thinking}
+			return triples, usage
 		except Exception as exc:  # pylint: disable=broad-except
 			last_error = f"attempt {attempt}/{max_retries}: {exc}"
 			if attempt < max_retries:
@@ -275,7 +272,7 @@ def parse_args() -> argparse.Namespace:
 	root = Path(__file__).resolve().parents[2]
 
 	parser = argparse.ArgumentParser(
-		description="Use Baichuan-M3-Plus API to generate triple extraction fine-tuning data."
+		description="Use Baichuan-M3 API to generate triple extraction fine-tuning data."
 	)
 	parser.add_argument(
 		"--input_file",
@@ -328,7 +325,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--model",
 		type=str,
-		default="Baichuan-M3-Plus",
+		default="Baichuan-M3",
 		help="Baichuan model name.",
 	)
 	parser.add_argument(
@@ -352,7 +349,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--temperature",
 		type=float,
-		default=0.2,
+		default=0.8,
 		help="Sampling temperature.",
 	)
 	parser.add_argument(
@@ -370,13 +367,13 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--max_tokens",
 		type=int,
-		default=4096,
+		default=10000,
 		help="Maximum output tokens from API.",
 	)
 	parser.add_argument(
 		"--thinking_budget_tokens",
 		type=int,
-		default=2000,
+		default=4000,
 		help="Thinking budget tokens; set 0 to disable.",
 	)
 	parser.add_argument(
@@ -384,6 +381,13 @@ def parse_args() -> argparse.Namespace:
 		type=int,
 		default=90,
 		help="HTTP request timeout in seconds.",
+	)
+	parser.add_argument(
+		"--use_hard_constraints",
+		type=str,
+		choices=["Yes", "No"],
+		default="No",
+		help="Yes to include the hard-constraint block in the system prompt; No to omit it.",
 	)
 
 	return parser.parse_args()
@@ -413,7 +417,8 @@ def run(args: argparse.Namespace) -> RunStats:
 	api_key = load_api_key(args.api_config)
 	raw_prompt = args.prompt_file.read_text(encoding="utf-8")
 	prompt_template = sanitize_prompt_template(raw_prompt)
-	system_prompt = build_system_prompt(prompt_template)
+	use_hard_constraints = args.use_hard_constraints == "Yes"
+	system_prompt = build_system_prompt(prompt_template, use_hard_constraints)
 
 	records = list(iter_records(load_json_file(args.input_file)))
 	stats = RunStats(total=len(records))
@@ -428,7 +433,7 @@ def run(args: argparse.Namespace) -> RunStats:
 	print(f"Output JSONL: {args.output_jsonl}")
 	print(f"Usage JSONL: {args.usage_jsonl}")
 	print(f"Failed JSONL: {args.failed_jsonl}")
-	print(f"temperature={args.temperature}, top_p={args.top_p}, top_k={args.top_k}, thinking_budget_tokens={args.thinking_budget_tokens}")
+	print(f"temperature={args.temperature}, top_p={args.top_p}, top_k={args.top_k}, thinking_budget_tokens={args.thinking_budget_tokens}, use_hard_constraints={args.use_hard_constraints}")
 	print("=" * 72)
 
 	session = requests.Session()
@@ -488,12 +493,9 @@ def run(args: argparse.Namespace) -> RunStats:
 				args.usage_jsonl,
 				{
 					"PMID": pmid,
-					"completion_tokens": int(usage.get("usage", {}).get("completion_tokens", 0) or 0),
-					"prompt_tokens": int(usage.get("usage", {}).get("prompt_tokens", 0) or 0),
-					"total_tokens": int(usage.get("usage", {}).get("total_tokens", 0) or 0),
-					"thinking_budget_tokens": int(args.thinking_budget_tokens or 0),
-					"thinking_status": str(usage.get("thinking", {}).get("status", "") or ""),
-					"thinking_summary": str(usage.get("thinking", {}).get("summary", "") or ""),
+					"completion_tokens": int(usage.get("completion_tokens", 0) or 0),
+					"prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
+					"total_tokens": int(usage.get("total_tokens", 0) or 0),
 					"timestamp": utc_now_iso(),
 				},
 			)
