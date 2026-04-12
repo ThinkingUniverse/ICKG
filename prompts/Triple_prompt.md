@@ -24,7 +24,7 @@ All relations must be one of the predefined relation types.
 | `phenotype` | Observable biological characteristics or clinical presentations (e.g., lymphopenia, Treg cells in T cells, proportion of NK cells, higher proportion of monocytes, CD4/CD8 T cell ratio, morphology of T cells, CD40 on B cells) |
 | `chemical` | Non-drug chemical substances including metabolites, toxins, signaling molecules (e.g., reactive oxygen species, LPS) |
 | `cell_type` | Immune or non-immune cell types and subtypes (e.g., CD8+ T cell, plasmacytoid dendritic cell) |
-| `species` | Organism species (e.g., Homo sapiens, Mus musculus, microorganism) |
+| `species` | Any organism species, including animals, plants, microorganisms, and all other living taxa (e.g., Homo sapiens, Mus musculus, Arabidopsis thaliana, Escherichia coli, SARS-CoV-2) |
 | `method` | Experimental or analytical techniques (e.g., flow cytometry, scRNA-seq, ELISA) |
 | `physiology` | Normal biological processes or states (e.g., immune homeostasis, cell proliferation) |
 | `pathology` | Abnormal biological processes or states (e.g., chronic inflammation, fibrosis) |
@@ -74,6 +74,7 @@ All relations are **directional**: (head_entity → relation → tail_entity).
 | `hyponym_of` | A is a subtype, specific instance, component, or derivative of B. **This relation subsumes *derived_from*, *part_of*, and *subset_of***: use `hyponym_of` when A is derived from B, is a part of B, or is a subset of B, in addition to the standard subtype/instance sense. |
 | `abbreviation_for` | A is an abbreviation or acronym for B |
 | `help_identify` | A can be used to identify, detect, predict, measure, serve as a marker for, or is a characteristic of B. **This relation subsumes *predicts*, *measures*, *marker for*, and *characteristic of***: use when A is a tool, method, biomarker, surface marker, or feature that characterizes, distinguishes, quantifies, or typifies B. |
+| `secretes` | Cell type A secretes protein/chemical B |
 | `expressed_by` | Gene or protein A is expressed by cell type B |
 | `binds_to` | A physically binds to B (receptor-ligand, antibody-antigen) |
 | `differentiates_into` | Cell type A differentiates into cell type B |
