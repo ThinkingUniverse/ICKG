@@ -21,6 +21,10 @@ import requests
 API_URL = "https://api.baichuan-ai.com/v1/chat/completions"
 
 
+class APIFatal429Error(Exception):
+	"""Fatal API error: stop processing when HTTP 429 is returned."""
+
+
 @dataclass
 class RunStats:
 	total: int = 0
@@ -199,6 +203,8 @@ def call_baichuan(
 		payload["thinking"] = {"budget_tokens": thinking_budget_tokens}
 
 	response = session.post(API_URL, headers=headers, json=payload, timeout=timeout_sec)
+	if response.status_code == 429:
+		raise APIFatal429Error("429 Client Error: API quota exhausted")
 	response.raise_for_status()
 
 	body = response.json()
@@ -252,6 +258,8 @@ def extract_with_retry(
 			)
 			triples = parse_triples_json(model_text)
 			return triples, usage
+		except APIFatal429Error:
+			raise
 		except Exception as exc:  # pylint: disable=broad-except
 			last_error = f"attempt {attempt}/{max_retries}: {exc}"
 			if attempt < max_retries:
@@ -411,6 +419,40 @@ def load_api_key(api_config_path: Path) -> str:
 	return api_key
 
 
+def prompt_for_new_api_key() -> Optional[str]:
+	"""On 429, ask whether to stop or continue with a new API key."""
+	prompt_text = (
+		"API returned 429 (quota exhausted).\n"
+		"Input No to stop, or paste a new API key to continue:"
+	)
+
+	user_input: Optional[str] = None
+	try:
+		import tkinter as tk
+		from tkinter import simpledialog
+
+		root = tk.Tk()
+		root.withdraw()
+		user_input = simpledialog.askstring("Baichuan API 429", prompt_text)
+		root.destroy()
+	except Exception:
+		# Fallback to terminal input when GUI dialog is unavailable.
+		try:
+			user_input = input(f"{prompt_text}\n")
+		except EOFError:
+			user_input = None
+
+	if user_input is None:
+		return None
+
+	value = user_input.strip()
+	if not value:
+		return None
+	if value.lower() == "no":
+		return None
+	return value
+
+
 def run(args: argparse.Namespace) -> RunStats:
 	validate_paths(args)
 
@@ -437,6 +479,7 @@ def run(args: argparse.Namespace) -> RunStats:
 	print("=" * 72)
 
 	session = requests.Session()
+	stop_requested = False
 
 	for index, record in enumerate(records, start=1):
 		pmid = str(record.get("PMID", "")).strip()
@@ -465,53 +508,77 @@ def run(args: argparse.Namespace) -> RunStats:
 			stats.truncated_records += 1
 
 		user_prompt = build_user_prompt(input_text)
+		record_done = False
+		while not record_done:
+			try:
+				triples, usage = extract_with_retry(
+					session=session,
+					api_key=api_key,
+					model=args.model,
+					system_prompt=system_prompt,
+					user_prompt=user_prompt,
+					max_retries=args.max_retries,
+					sleep_sec=args.sleep_sec,
+					temperature=args.temperature,
+					top_p=args.top_p,
+					top_k=args.top_k,
+					max_tokens=args.max_tokens,
+					timeout_sec=args.timeout_sec,
+					thinking_budget_tokens=args.thinking_budget_tokens,
+				)
 
-		try:
-			triples, usage = extract_with_retry(
-				session=session,
-				api_key=api_key,
-				model=args.model,
-				system_prompt=system_prompt,
-				user_prompt=user_prompt,
-				max_retries=args.max_retries,
-				sleep_sec=args.sleep_sec,
-				temperature=args.temperature,
-				top_p=args.top_p,
-				top_k=args.top_k,
-				max_tokens=args.max_tokens,
-				timeout_sec=args.timeout_sec,
-				thinking_budget_tokens=args.thinking_budget_tokens,
-			)
+				written_for_record = 0
+				for triple in triples:
+					output_item = {"PMID": pmid, **triple}
+					append_jsonl(args.output_jsonl, output_item)
+					written_for_record += 1
 
-			written_for_record = 0
-			for triple in triples:
-				output_item = {"PMID": pmid, **triple}
-				append_jsonl(args.output_jsonl, output_item)
-				written_for_record += 1
+				append_jsonl(
+					args.usage_jsonl,
+					{
+						"PMID": pmid,
+						"completion_tokens": int(usage.get("completion_tokens", 0) or 0),
+						"prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
+						"total_tokens": int(usage.get("total_tokens", 0) or 0),
+						"timestamp": utc_now_iso(),
+					},
+				)
 
-			append_jsonl(
-				args.usage_jsonl,
-				{
-					"PMID": pmid,
-					"completion_tokens": int(usage.get("completion_tokens", 0) or 0),
-					"prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
-					"total_tokens": int(usage.get("total_tokens", 0) or 0),
-					"timestamp": utc_now_iso(),
-				},
-			)
+				stats.success_records += 1
+				stats.total_triples += written_for_record
+				record_done = True
+			except APIFatal429Error as exc:
+				new_api_key = prompt_for_new_api_key()
+				if new_api_key is None:
+					stats.failed_records += 1
+					append_jsonl(
+						args.failed_jsonl,
+						{
+							"PMID": pmid,
+							"error_reason": str(exc),
+							"timestamp": utc_now_iso(),
+						},
+					)
+					print("Detected API 429. You chose to stop the run.")
+					stop_requested = True
+					record_done = True
+				else:
+					api_key = new_api_key
+					print("Received new API key. Retrying current PMID.")
+			except Exception as exc:  # pylint: disable=broad-except
+				stats.failed_records += 1
+				append_jsonl(
+					args.failed_jsonl,
+					{
+						"PMID": pmid,
+						"error_reason": str(exc),
+						"timestamp": utc_now_iso(),
+					},
+				)
+				record_done = True
 
-			stats.success_records += 1
-			stats.total_triples += written_for_record
-		except Exception as exc:  # pylint: disable=broad-except
-			stats.failed_records += 1
-			append_jsonl(
-				args.failed_jsonl,
-				{
-					"PMID": pmid,
-					"error_reason": str(exc),
-					"timestamp": utc_now_iso(),
-				},
-			)
+		if stop_requested:
+			break
 
 		append_state_pmid(args.state_file, pmid)
 		processed_pmids.add(pmid)
@@ -527,6 +594,9 @@ def run(args: argparse.Namespace) -> RunStats:
 				f"skipped={stats.skipped}, "
 				f"triples={stats.total_triples}"
 			)
+
+		if stop_requested:
+			break
 
 	session.close()
 	return stats
