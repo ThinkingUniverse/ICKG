@@ -31,6 +31,7 @@ All relations must be one of the predefined relation types.
 | `protein` | Proteins, including cytokines, receptors, enzymes, and transcription factors (e.g., IL-6, PD-1, NFκB) |
 | `anatomy` | Anatomical locations including tissues, organs, and body compartments (e.g., lymph node, bone marrow, tumor microenvironment) |
 | `gene` | Genes or genetic loci (e.g., FOXP3, TNF, HLA-DR) |
+| `variant` | Genetic variants, mutations, polymorphisms, or isoforms (e.g., rs1234567, BRCA1 V600E, splice variant, missense mutation) |
 | `intervention` | Any deliberate action or agent applied to modify health or biological outcomes, including pharmacological agents, surgical procedures, dietary regimens, physical exercise, supplementation, behavioral programs, and other therapeutic or preventive measures (e.g., pembrolizumab, methotrexate, aerobic exercise, Mediterranean diet, caloric restriction, vaccination, cognitive behavioral therapy) |
 | `time` | Temporal references (e.g., 12 weeks, acute phase, early onset) |
 | `health_factors` | Lifestyle, environmental, or demographic factors (e.g., smoking, obesity, aging, sex) |
@@ -50,7 +51,7 @@ All relations are **directional**: (head_entity → relation → tail_entity).
 
 | Relation | Direction & Meaning |
 |---|---|
-| `associated_with` | A is statistically, clinically, or biologically associated with B — use when the relationship is real but its directionality or mechanistic nature cannot be determined from the text, or when the text uses neutral association language (e.g., "associated with", "linked to", "related to", "involved in") without implying a specific mechanism or direction. Do **not** use when a more specific relation type accurately captures the relationship. |
+| `associated_with` | A is statistically, clinically, or biologically associated with B — use when the relationship is either real or implied but its directionality or mechanistic nature cannot be determined from the text, or when the text uses neutral or non-committal language (e.g., "associated with", "linked to", "related to", "involved in"). **This relation also subsumes the following verbs when they do not imply a clear mechanism or direction: *regulates, participates in, affects, influences, modulates, changes*.** Do **not** use when a more specific relation type clearly applies. |
 | `results_in` | A directly causes or leads to B (strong causation) |
 | `promotes` | A facilitates or drives B (moderate causation, not necessarily direct) |
 | `activates` | A activates B (specific to molecular/cellular activation events) |
@@ -62,21 +63,20 @@ All relations are **directional**: (head_entity → relation → tail_entity).
 | `increases_risk_of` | A is a risk factor that elevates the probability of B occurring |
 | `co-occurs_with` | A and B frequently co-occur or are comorbid (symmetric relation) |
 | `treatment_for` | A (`intervention`) is used as a treatment or management strategy for disease or condition B |
+| `prevents` | A reduces or eliminates the occurrence or development of B (e.g., vaccination prevents infection) |
+| `targets` | A specifically acts on or is directed against B as its primary molecular or cellular target (e.g., pembrolizumab targets PD-1) |
 | `mediates` | A acts as an intermediary through which an upstream cause leads to B |
 | `positively_correlated_with` | A and B are statistically positively correlated (no causal implication) |
 | `negatively_correlated_with` | A and B are statistically negatively correlated (no causal implication) |
 | `u_shaped_association_with` | A has a U-shaped (non-monotonic) association with B |
 | `inverted_u_shaped_association_with` | A has an inverted U-shaped association with B |
 | `includes` | A contains or encompasses B as a component or subtype |
-| `hyponym_of` | A is a subtype or specific instance of B |
+| `hyponym_of` | A is a subtype, specific instance, component, or derivative of B. **This relation subsumes *derived_from*, *part_of*, and *subset_of***: use `hyponym_of` when A is derived from B, is a part of B, or is a subset of B, in addition to the standard subtype/instance sense. |
 | `abbreviation_for` | A is an abbreviation or acronym for B |
-| `characteristic_of` | A is a feature or characteristic of B |
-| `help_identify` | A can be used to identify or detect B |
-| `secretes` | Cell type A secretes protein/chemical B |
+| `help_identify` | A can be used to identify, detect, predict, measure, serve as a marker for, or is a characteristic of B. **This relation subsumes *predicts*, *measures*, *marker for*, and *characteristic of***: use when A is a tool, method, biomarker, surface marker, or feature that characterizes, distinguishes, quantifies, or typifies B. |
 | `expressed_by` | Gene or protein A is expressed by cell type B |
 | `binds_to` | A physically binds to B (receptor-ligand, antibody-antigen) |
 | `differentiates_into` | Cell type A differentiates into cell type B |
-| `marker_for` | A serves as a phenotypic marker to identify B |
 | `located_in` | A is found in or anatomically situated within anatomy B |
 
 ---
@@ -122,11 +122,12 @@ Prioritize relationships that are directly and explicitly stated in the source t
 
 
 **Entity extraction:**
-Identify mentions of diseases, phenotypes, chemicals, cell types, species, methods, physiological processes, pathological processes, proteins, anatomical locations, genes, interventions, temporal references, health factors, pathways, and relationships. Assign each identified mention the most specific matching entity type from the predefined list.
+Identify mentions of diseases, phenotypes, chemicals, cell types, species, methods, physiological processes, pathological processes, proteins, anatomical locations, genes, variants, interventions, temporal references, health factors, pathways, and relationships. Assign each identified mention the most specific matching entity type from the predefined list.
 
 **Relation assignment:**
 For each entity pair where the text states or implies a relationship, assign the most specific and accurate relation type from the predefined list.
-Use `associated_with` when: (a) the text states or implies a relationship exists between two entities, AND (b) the directionality or mechanism is unclear or unspecified, OR the text uses non-committal association language. Prefer `associated_with` over leaving a real relationship unextracted. Do **not** use it when a more specific relation type clearly applies.
+Prefer `associated_with` over leaving a real or implied relationship unextracted.
+The verb 'induces' should be mapped to `results_in`, `promotes`, or `activates` depending on whether the causal relationship is direct, facilitative, or activation-specific.
 
 **Nested relations:**
 If entity A relates to B, and B relates to C, extract both (A, relation, B) and (B, relation, C) as independent triples.
