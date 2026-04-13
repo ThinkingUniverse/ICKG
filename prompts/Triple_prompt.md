@@ -61,7 +61,7 @@ All relations are **directional**: (head_entity → relation → tail_entity).
 | `exacerbates` | A worsens or aggravates B |
 | `improves` | A ameliorates or alleviates B (symptoms, biomarkers, or outcomes — not used for therapeutic indication) |
 | `increases_risk_of` | A is a risk factor that elevates the probability of B occurring |
-| `co-occurs_with` | A and B frequently co-occur or are comorbid (symmetric relation) |
+| `co-occurs_with` | A and B frequently co-occur, are comorbid, or are co-expressed |
 | `treatment_for` | A (`intervention`) is used as a treatment or management strategy for disease or condition B |
 | `prevents` | A reduces or eliminates the occurrence or development of B (e.g., vaccination prevents infection) |
 | `targets` | A specifically acts on or is directed against B as its primary molecular or cellular target (e.g., pembrolizumab targets PD-1) |
@@ -75,7 +75,7 @@ All relations are **directional**: (head_entity → relation → tail_entity).
 | `abbreviation_for` | A is an abbreviation or acronym for B |
 | `help_identify` | A can be used to identify, detect, predict, measure, serve as a marker for, or is a characteristic of B. **This relation subsumes *predicts*, *measures*, *marker for*, and *characteristic of***: use when A is a tool, method, biomarker, surface marker, or feature that characterizes, distinguishes, quantifies, or typifies B. |
 | `secretes` | Cell type A secretes protein/chemical B |
-| `expressed_by` | Gene or protein A is expressed by cell type B |
+| `expresses` | Cell type, tissue, or organ A (`cell_type` or `anatomy`) expresses gene or protein B (`gene` or `protein`) |
 | `binds_to` | A physically binds to B (receptor-ligand, antibody-antigen) |
 | `differentiates_into` | Cell type A differentiates into cell type B |
 | `located_in` | A is found in or anatomically situated within anatomy B |
@@ -198,7 +198,7 @@ Let's think step by step.
   },
   {
     "head": "anti-TNF therapy",
-    "head_type": "drug",
+    "head_type": "intervention",
     "relation": "treatment_for",
     "tail": "rheumatoid arthritis",
     "tail_type": "disease",
@@ -207,7 +207,7 @@ Let's think step by step.
   },
   {
     "head": "anti-TNF therapy",
-    "head_type": "drug",
+    "head_type": "intervention",
     "relation": "decreases",
     "tail": "rheumatoid arthritis disease activity scores",
     "tail_type": "phenotype",

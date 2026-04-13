@@ -375,7 +375,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--max_tokens",
 		type=int,
-		default=10000,
+		default=15000,
 		help="Maximum output tokens from API.",
 	)
 	parser.add_argument(
