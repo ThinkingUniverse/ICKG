@@ -22,8 +22,9 @@ All relations must be one of the predefined relation types.
 |---|---|
 | `disease` | Pathological conditions or disorders (e.g., rheumatoid arthritis, COVID-19) |
 | `phenotype` | Observable biological characteristics or clinical presentations (e.g., lymphopenia, Treg cells in T cells, proportion of NK cells, higher proportion of monocytes, CD4/CD8 T cell ratio, morphology of T cells, CD40 on B cells) |
-| `chemical` | Non-drug chemical substances including metabolites, toxins, signaling molecules (e.g., reactive oxygen species, LPS) |
+| `chemical` | Non-drug chemical substances including metabolites, toxins, signaling molecules, and nucleic acid molecules when appearing as molecular agents rather than named genetic loci (e.g., reactive oxygen species, LPS, cfDNA, mtDNA, CpG DNA, dsDNA) |
 | `cell_type` | Immune or non-immune cell types and subtypes (e.g., CD8+ T cell, plasmacytoid dendritic cell) |
+| `cell_line` | Immortalized or artificially maintained cell lines used in experimental settings (e.g., Jurkat, THP-1, HeLa, HEK293, RAW264.7) |
 | `species` | Any organism species, including animals, plants, microorganisms, and all other living taxa (e.g., Homo sapiens, Mus musculus, Arabidopsis thaliana, Escherichia coli, SARS-CoV-2) |
 | `method` | Experimental or analytical techniques (e.g., flow cytometry, scRNA-seq, ELISA) |
 | `physiology` | Normal biological processes or states (e.g., immune homeostasis, cell proliferation) |
@@ -31,8 +32,9 @@ All relations must be one of the predefined relation types.
 | `protein` | Proteins, including cytokines, receptors, enzymes, and transcription factors (e.g., IL-6, PD-1, NFκB) |
 | `anatomy` | Anatomical locations including tissues, organs, and body compartments (e.g., lymph node, bone marrow, tumor microenvironment) |
 | `gene` | Genes or genetic loci (e.g., FOXP3, TNF, HLA-DR) |
+| `RNA` | RNA molecules — including non-coding RNAs and specific transcripts — when referenced as functional entities rather than as genetic loci (e.g., miR-155, lncRNA NEAT1, circRNA CDR1as, siRNA, mRNA) |
 | `variant` | Genetic variants, mutations, polymorphisms, or isoforms (e.g., rs1234567, BRCA1 V600E, splice variant, missense mutation) |
-| `intervention` | Any deliberate action or agent applied to modify health or biological outcomes, including pharmacological agents, surgical procedures, dietary regimens, physical exercise, supplementation, behavioral programs, and other therapeutic or preventive measures (e.g., pembrolizumab, methotrexate, aerobic exercise, Mediterranean diet, caloric restriction, vaccination, cognitive behavioral therapy) |
+| `intervention` | Any deliberate action or agent applied to modify health or biological outcomes, including drugs, pharmacological agents, surgical procedures, dietary regimens, physical exercise, supplementation, behavioral programs, and other therapeutic or preventive measures (e.g., pembrolizumab, methotrexate, aerobic exercise, Mediterranean diet, caloric restriction, vaccination, cognitive behavioral therapy) |
 | `time` | Temporal references (e.g., 12 weeks, acute phase, early onset) |
 | `health_factors` | Lifestyle, environmental, or demographic factors (e.g., smoking, obesity, aging, sex) |
 | `pathway` | Molecular or signaling pathways (e.g., JAK-STAT pathway, NF-κB signaling) |
@@ -42,6 +44,7 @@ All relations must be one of the predefined relation types.
 > - Use `intervention` for any deliberate therapeutic or preventive action; use `chemical` for substances that appear in a biological context without being framed as an applied intervention.
 > - Use `physiology` for normal processes; use `pathology` for abnormal or disease-associated processes.
 > - Use `relationship` when the text refers to an inter-entity association as a named concept in itself — most commonly as the object of a mediation statement (e.g., "X mediates the association between A and B" → extract: (X, `mediates`, association between A and B [`relationship`])).
+> - use `cell_type` for primary, naturally occurring cell populations; use `cell_line` for established in vitro lines regardless of their cell-of-origin.
 
 ---
 
@@ -51,7 +54,7 @@ All relations are **directional**: (head_entity → relation → tail_entity).
 
 | Relation | Direction & Meaning |
 |---|---|
-| `associated_with` | A is statistically, clinically, or biologically associated with B — use when the relationship is either real or implied but its directionality or mechanistic nature cannot be determined from the text, or when the text uses neutral or non-committal language (e.g., "associated with", "linked to", "related to", "involved in"). **This relation also subsumes the following verbs when they do not imply a clear mechanism or direction: *regulates, participates in, affects, influences, modulates, changes*.** Do **not** use when a more specific relation type clearly applies. |
+| `associated_with` | A is statistically, clinically, or biologically associated with B — use when the relationship is either real or implied but its directionality or mechanistic nature cannot be determined from the text, or when the text uses neutral or non-committal language (e.g., "associated with", "linked to", "related to", "involved in"). This relation also subsumes the following verbs when they do not imply a clear mechanism or direction: *regulates, participates in, affects, influences, modulates, changes*. Do **not** use when a more specific relation type clearly applies. |
 | `results_in` | A directly causes or leads to B (strong causation) |
 | `promotes` | A facilitates or drives B (moderate causation, not necessarily direct) |
 | `activates` | A activates B (specific to molecular/cellular activation events) |
@@ -71,11 +74,11 @@ All relations are **directional**: (head_entity → relation → tail_entity).
 | `u_shaped_association_with` | A has a U-shaped (non-monotonic) association with B |
 | `inverted_u_shaped_association_with` | A has an inverted U-shaped association with B |
 | `includes` | A contains or encompasses B as a component or subtype |
-| `hyponym_of` | A is a subtype, specific instance, component, or derivative of B. **This relation subsumes *derived_from*, *part_of*, and *subset_of***: use `hyponym_of` when A is derived from B, is a part of B, or is a subset of B, in addition to the standard subtype/instance sense. |
+| `hyponym_of` | A is a subtype, specific instance, component, or derivative of B. This relation subsumes *derived_from*, *part_of*, and *subset_of*: use `hyponym_of` when A is derived from B, is a part of B, or is a subset of B, in addition to the standard subtype/instance sense. |
 | `abbreviation_for` | A is an abbreviation or acronym for B |
-| `help_identify` | A can be used to identify, detect, predict, measure, serve as a marker for, or is a characteristic of B. **This relation subsumes *predicts*, *measures*, *marker for*, and *characteristic of***: use when A is a tool, method, biomarker, surface marker, or feature that characterizes, distinguishes, quantifies, or typifies B. |
-| `secretes` | Cell type A secretes protein/chemical B |
-| `expresses` | Cell type, tissue, or organ A (`cell_type` or `anatomy`) expresses gene or protein B (`gene` or `protein`) |
+| `help_identify` | A can be used to identify, detect, predict, measure, serve as a marker for, or is a characteristic of B. This relation subsumes *predicts*, *measures*, *marker for*, and *characteristic of*: use when A is a tool, method, biomarker, surface marker, or feature that characterizes, distinguishes, quantifies, or typifies B. |
+| `secretes` | Cell type or cell line A secretes protein or chemical B |
+| `expresses` | Cell type, cell line, tissue, or organ A (`cell_type`, `cell_line`, or `anatomy`) expresses gene, protein, or RNA molecule B |
 | `binds_to` | A physically binds to B (receptor-ligand, antibody-antigen) |
 | `differentiates_into` | Cell type A differentiates into cell type B |
 | `located_in` | A is found in or anatomically situated within anatomy B |
@@ -123,7 +126,7 @@ Prioritize relationships that are directly and explicitly stated in the source t
 
 
 **Entity extraction:**
-Identify mentions of diseases, phenotypes, chemicals, cell types, species, methods, physiological processes, pathological processes, proteins, anatomical locations, genes, variants, interventions, temporal references, health factors, pathways, and relationships. Assign each identified mention the most specific matching entity type from the predefined list.
+Identify mentions of diseases, phenotypes, chemicals, cell types, cell lines, species, methods, physiological processes, pathological processes, proteins, anatomical locations, genes, RNAs, variants, interventions, temporal references, health factors, pathways, and relationships. Assign each identified mention the most specific matching entity type from the predefined list.
 
 **Relation assignment:**
 For each entity pair where the text states or implies a relationship, assign the most specific and accurate relation type from the predefined list.
