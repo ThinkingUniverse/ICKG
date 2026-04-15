@@ -5,3 +5,4 @@ scripts/Abstract_download_and_processing/pubmed_config.json
 scripts/Triple_extraction/API_config.json
 .idea/
 results/
+scripts/Triple_extraction/API.txt

@@ -20,9 +20,62 @@ import requests
 
 API_URL = "https://api.baichuan-ai.com/v1/chat/completions"
 
+# How many 429 responses to tolerate before marking a key as exhausted
+_QUOTA_MAX_ATTEMPTS = 3
+# Seconds to wait between each 429 retry for the same key
+_QUOTA_WAIT_SEC = 2.0
+
 
 class APIFatal429Error(Exception):
-	"""Fatal API error: stop processing when HTTP 429 is returned."""
+	"""Raised when all keys in the pool are exhausted (all returned 429)."""
+
+
+class KeyPool:
+	"""Round-robin API key pool backed by a text file (one key per line).
+
+	The file is re-read every time ``advance()`` is called so that keys
+	added while the program is running are automatically picked up.
+	"""
+
+	def __init__(self, path: Path) -> None:
+		self._path = path
+		self._exhausted: Set[str] = set()
+		keys = self._read_fresh_keys()
+		if not keys:
+			raise ValueError(f"No API keys found in {path}")
+		self._current = keys[0]
+		print(f"[KeyPool] Using API key: {self._current}")
+
+	def _read_fresh_keys(self) -> List[str]:
+		"""Re-read the key file and return all non-empty lines."""
+		if not self._path.exists():
+			return []
+		keys: List[str] = []
+		with self._path.open("r", encoding="utf-8") as fh:
+			for line in fh:
+				value = line.strip()
+				if value:
+					keys.append(value)
+		return keys
+
+	@property
+	def current(self) -> str:
+		return self._current
+
+	def advance(self) -> Optional[str]:
+		"""Mark the current key as exhausted and return the next available key.
+
+		Re-reads the key file so that keys added at runtime are recognised.
+		Returns ``None`` when all known keys are exhausted.
+		"""
+		self._exhausted.add(self._current)
+		keys = self._read_fresh_keys()
+		for key in keys:
+			if key not in self._exhausted:
+				self._current = key
+				print(f"[KeyPool] Switched to API key: {self._current}")
+				return self._current
+		return None
 
 
 @dataclass
@@ -224,6 +277,49 @@ def call_baichuan(
 	return content, usage
 
 
+def call_baichuan_with_quota_retry(
+	session: requests.Session,
+	api_key: str,
+	model: str,
+	system_prompt: str,
+	user_prompt: str,
+	temperature: float,
+	top_p: float,
+	top_k: int,
+	max_tokens: int,
+	timeout_sec: int,
+	thinking_budget_tokens: int,
+) -> tuple[str, Dict[str, Any]]:
+	"""Call ``call_baichuan`` up to ``_QUOTA_MAX_ATTEMPTS`` times for 429s.
+
+	Waits ``_QUOTA_WAIT_SEC`` between each attempt.  After all attempts are
+	exhausted, re-raises ``APIFatal429Error`` so the caller can rotate keys.
+	"""
+	for attempt in range(1, _QUOTA_MAX_ATTEMPTS + 1):
+		try:
+			return call_baichuan(
+				session=session,
+				api_key=api_key,
+				model=model,
+				system_prompt=system_prompt,
+				user_prompt=user_prompt,
+				temperature=temperature,
+				top_p=top_p,
+				top_k=top_k,
+				max_tokens=max_tokens,
+				timeout_sec=timeout_sec,
+				thinking_budget_tokens=thinking_budget_tokens,
+			)
+		except APIFatal429Error:
+			print(
+				f"[KeyPool] 429 for key {api_key} "
+				f"(attempt {attempt}/{_QUOTA_MAX_ATTEMPTS})"
+			)
+			if attempt < _QUOTA_MAX_ATTEMPTS:
+				time.sleep(_QUOTA_WAIT_SEC)
+	raise APIFatal429Error(f"Key {api_key} returned 429 on all {_QUOTA_MAX_ATTEMPTS} attempts")
+
+
 def extract_with_retry(
 	session: requests.Session,
 	api_key: str,
@@ -243,7 +339,7 @@ def extract_with_retry(
 
 	for attempt in range(1, max_retries + 1):
 		try:
-			model_text, usage = call_baichuan(
+			model_text, usage = call_baichuan_with_quota_retry(
 				session=session,
 				api_key=api_key,
 				model=model,
@@ -298,7 +394,13 @@ def parse_args() -> argparse.Namespace:
 		"--api_config",
 		type=Path,
 		default=root / "scripts/Triple_extraction/API_config.json",
-		help="API config JSON containing api_key.",
+		help="(Unused) Legacy API config JSON. Keys are now loaded from --api_keys_file.",
+	)
+	parser.add_argument(
+		"--api_keys_file",
+		type=Path,
+		default=root / "scripts/Triple_extraction/API.txt",
+		help="Text file with one API key per line (supports runtime additions).",
 	)
 	parser.add_argument(
 		"--output_jsonl",
@@ -402,7 +504,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def validate_paths(args: argparse.Namespace) -> None:
-	required_files = [args.input_file, args.prompt_file, args.api_config]
+	required_files = [args.input_file, args.prompt_file, args.api_keys_file]
 	for path in required_files:
 		if not path.exists():
 			raise FileNotFoundError(f"Required file does not exist: {path}")
@@ -419,44 +521,12 @@ def load_api_key(api_config_path: Path) -> str:
 	return api_key
 
 
-def prompt_for_new_api_key() -> Optional[str]:
-	"""On 429, ask whether to stop or continue with a new API key."""
-	prompt_text = (
-		"API returned 429 (quota exhausted).\n"
-		"Input No to stop, or paste a new API key to continue:"
-	)
-
-	user_input: Optional[str] = None
-	try:
-		import tkinter as tk
-		from tkinter import simpledialog
-
-		root = tk.Tk()
-		root.withdraw()
-		user_input = simpledialog.askstring("Baichuan API 429", prompt_text)
-		root.destroy()
-	except Exception:
-		# Fallback to terminal input when GUI dialog is unavailable.
-		try:
-			user_input = input(f"{prompt_text}\n")
-		except EOFError:
-			user_input = None
-
-	if user_input is None:
-		return None
-
-	value = user_input.strip()
-	if not value:
-		return None
-	if value.lower() == "no":
-		return None
-	return value
 
 
 def run(args: argparse.Namespace) -> RunStats:
 	validate_paths(args)
 
-	api_key = load_api_key(args.api_config)
+	key_pool = KeyPool(args.api_keys_file)
 	raw_prompt = args.prompt_file.read_text(encoding="utf-8")
 	prompt_template = sanitize_prompt_template(raw_prompt)
 	use_hard_constraints = args.use_hard_constraints == "Yes"
@@ -513,7 +583,7 @@ def run(args: argparse.Namespace) -> RunStats:
 			try:
 				triples, usage = extract_with_retry(
 					session=session,
-					api_key=api_key,
+					api_key=key_pool.current,
 					model=args.model,
 					system_prompt=system_prompt,
 					user_prompt=user_prompt,
@@ -548,8 +618,8 @@ def run(args: argparse.Namespace) -> RunStats:
 				stats.total_triples += written_for_record
 				record_done = True
 			except APIFatal429Error as exc:
-				new_api_key = prompt_for_new_api_key()
-				if new_api_key is None:
+				next_key = key_pool.advance()
+				if next_key is None:
 					stats.failed_records += 1
 					append_jsonl(
 						args.failed_jsonl,
@@ -559,12 +629,11 @@ def run(args: argparse.Namespace) -> RunStats:
 							"timestamp": utc_now_iso(),
 						},
 					)
-					print("Detected API 429. You chose to stop the run.")
+					print("[KeyPool] All API keys exhausted. Stopping run.")
 					stop_requested = True
 					record_done = True
 				else:
-					api_key = new_api_key
-					print("Received new API key. Retrying current PMID.")
+					print(f"[KeyPool] Retrying PMID {pmid} with new key.")
 			except Exception as exc:  # pylint: disable=broad-except
 				stats.failed_records += 1
 				append_jsonl(
