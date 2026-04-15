@@ -2,6 +2,7 @@
 
 This script reads PubMed records, uses a markdown prompt template,
 extracts triples from title+abstract text, and appends results to JSONL.
+Supports concurrent extraction with multiple API keys.
 """
 
 from __future__ import annotations
@@ -9,8 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import threading
 import time
-from dataclasses import dataclass
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
@@ -30,24 +34,42 @@ class APIFatal429Error(Exception):
 	"""Raised when all keys in the pool are exhausted (all returned 429)."""
 
 
-class KeyPool:
-	"""Round-robin API key pool backed by a text file (one key per line).
+class KeyAcquireTimeoutError(Exception):
+	"""Raised when waiting for an available key times out temporarily."""
 
-	The file is re-read every time ``advance()`` is called so that keys
+
+class KeyScheduler:
+	"""Thread-safe API key scheduler with per-key concurrency and daily limits.
+
+	The key file is re-read on every ``acquire_key()`` call so that keys
 	added while the program is running are automatically picked up.
 	"""
 
-	def __init__(self, path: Path) -> None:
+	def __init__(
+		self,
+		path: Path,
+		max_concurrency_per_key: int = 2,
+		daily_limit: int = 300,
+	) -> None:
 		self._path = path
+		self._max_concurrency = max_concurrency_per_key
+		self._daily_limit = daily_limit
+		self._lock = threading.Lock()
+		self._condition = threading.Condition(self._lock)
 		self._exhausted: Set[str] = set()
-		keys = self._read_fresh_keys()
-		if not keys:
+		self._in_flight: Dict[str, int] = {}
+		self._daily_count: Dict[str, int] = {}
+		self._keys: List[str] = []
+		self._refresh_keys_unlocked()
+		if not self._keys:
 			raise ValueError(f"No API keys found in {path}")
-		self._current = keys[0]
-		print(f"[KeyPool] Using API key: {self._current}")
+		print(
+			f"[KeyScheduler] Loaded {len(self._keys)} API keys | "
+			f"concurrency/key={self._max_concurrency}, "
+			f"daily_limit/key={self._daily_limit}"
+		)
 
 	def _read_fresh_keys(self) -> List[str]:
-		"""Re-read the key file and return all non-empty lines."""
 		if not self._path.exists():
 			return []
 		keys: List[str] = []
@@ -58,24 +80,80 @@ class KeyPool:
 					keys.append(value)
 		return keys
 
-	@property
-	def current(self) -> str:
-		return self._current
+	def _refresh_keys_unlocked(self) -> None:
+		"""Re-read key file; must be called while holding ``_lock``."""
+		fresh = self._read_fresh_keys()
+		existing = set(self._keys)
+		for key in fresh:
+			if key not in existing and key not in self._in_flight:
+				self._in_flight[key] = 0
+				self._daily_count[key] = 0
+				print(f"[KeyScheduler] Discovered new key: {key}")
+			elif key not in self._in_flight:
+				self._in_flight.setdefault(key, 0)
+				self._daily_count.setdefault(key, 0)
+		self._keys = fresh
 
-	def advance(self) -> Optional[str]:
-		"""Mark the current key as exhausted and return the next available key.
+	def acquire_key(self, timeout: float = 60.0) -> Optional[str]:
+		"""Block until a usable key is available.
 
-		Re-reads the key file so that keys added at runtime are recognised.
-		Returns ``None`` when all known keys are exhausted.
+		Returns a key with an available concurrency slot and remaining
+		daily quota, raises ``KeyAcquireTimeoutError`` on temporary wait
+		timeout, or returns ``None`` only when all keys are exhausted or
+		daily-capped.
 		"""
-		self._exhausted.add(self._current)
-		keys = self._read_fresh_keys()
-		for key in keys:
-			if key not in self._exhausted:
-				self._current = key
-				print(f"[KeyPool] Switched to API key: {self._current}")
-				return self._current
-		return None
+		deadline = time.monotonic() + timeout
+		with self._condition:
+			while True:
+				self._refresh_keys_unlocked()
+				any_alive = False
+				for key in self._keys:
+					if key in self._exhausted:
+						continue
+					if self._daily_count.get(key, 0) >= self._daily_limit:
+						continue
+					any_alive = True
+					if self._in_flight.get(key, 0) < self._max_concurrency:
+						self._in_flight[key] = self._in_flight.get(key, 0) + 1
+						self._daily_count[key] = self._daily_count.get(key, 0) + 1
+						print(f"[KeyScheduler] Acquired key: {key}")
+						return key
+				if not any_alive:
+					return None
+				remaining = deadline - time.monotonic()
+				if remaining <= 0:
+					raise KeyAcquireTimeoutError("Timed out waiting for an available API key")
+				self._condition.wait(timeout=min(remaining, 2.0))
+
+	def release_key(self, key: str) -> None:
+		"""Free one concurrency slot for *key*."""
+		with self._condition:
+			self._in_flight[key] = max(0, self._in_flight.get(key, 0) - 1)
+			self._condition.notify_all()
+
+	def mark_exhausted(self, key: str) -> None:
+		"""Mark *key* as exhausted (429 quota hit)."""
+		with self._condition:
+			self._exhausted.add(key)
+			print(f"[KeyScheduler] Key exhausted (429): {key}")
+			self._condition.notify_all()
+
+	def status_summary(self) -> str:
+		with self._lock:
+			self._refresh_keys_unlocked()
+			unique_keys = list(dict.fromkeys(self._keys))
+			total = len(unique_keys)
+			exhausted = sum(1 for k in unique_keys if k in self._exhausted)
+			daily_capped = sum(
+				1 for k in unique_keys
+				if k not in self._exhausted
+				and self._daily_count.get(k, 0) >= self._daily_limit
+			)
+			active = total - exhausted - daily_capped
+			return (
+				f"keys: {total} total, {active} active, "
+				f"{exhausted} exhausted, {daily_capped} daily-capped"
+			)
 
 
 @dataclass
@@ -86,6 +164,35 @@ class RunStats:
 	failed_records: int = 0
 	total_triples: int = 0
 	truncated_records: int = 0
+	_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+	def inc_success(self, triples: int) -> None:
+		with self._lock:
+			self.success_records += 1
+			self.total_triples += triples
+
+	def inc_failed(self) -> None:
+		with self._lock:
+			self.failed_records += 1
+
+	def inc_truncated(self) -> None:
+		with self._lock:
+			self.truncated_records += 1
+
+	def inc_skipped(self) -> None:
+		with self._lock:
+			self.skipped += 1
+
+	def snapshot(self) -> Dict[str, int]:
+		with self._lock:
+			return {
+				"total": self.total,
+				"skipped": self.skipped,
+				"success": self.success_records,
+				"failed": self.failed_records,
+				"triples": self.total_triples,
+				"truncated": self.truncated_records,
+			}
 
 
 def utc_now_iso() -> str:
@@ -95,6 +202,21 @@ def utc_now_iso() -> str:
 def load_json_file(path: Path) -> Any:
 	with path.open("r", encoding="utf-8-sig") as handle:
 		return json.load(handle)
+
+
+def iter_input_json_files(input_path: Path) -> List[Path]:
+	if input_path.is_file():
+		if input_path.suffix.lower() != ".json":
+			raise ValueError(f"Input file must be a JSON file: {input_path}")
+		return [input_path]
+
+	if input_path.is_dir():
+		json_files = sorted(path for path in input_path.glob("*.json") if path.is_file())
+		if not json_files:
+			raise ValueError(f"No JSON files found in input directory: {input_path}")
+		return json_files
+
+	raise FileNotFoundError(f"Input path does not exist: {input_path}")
 
 
 def append_jsonl(path: Path, obj: Dict[str, Any]) -> None:
@@ -327,7 +449,7 @@ def call_baichuan_with_quota_retry(
 			)
 		except APIFatal429Error:
 			print(
-				f"[KeyPool] 429 for key {api_key} "
+				f"[KeyScheduler] 429 for key {api_key} "
 				f"(attempt {attempt}/{_QUOTA_MAX_ATTEMPTS})"
 			)
 			if attempt < _QUOTA_MAX_ATTEMPTS:
@@ -398,8 +520,8 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--input_file",
 		type=Path,
-		default=root / "data/pubmed_output/random_sampling/PubMed_abstract_sampled_5000_1.json",
-		help="Input PubMed sampled JSON file.",
+		default=root / "data/pubmed_output/random_sampling",
+		help="Input PubMed JSON file or directory containing JSON files.",
 	)
 	parser.add_argument(
 		"--prompt_file",
@@ -464,7 +586,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--sleep_sec",
 		type=float,
-		default=2.0,
+		default=1.0,
 		help="Sleep seconds between records to avoid rate limits.",
 	)
 	parser.add_argument(
@@ -523,15 +645,41 @@ def parse_args() -> argparse.Namespace:
 		default="No",
 		help="Yes to enable timing logs for API calls; No to disable.",
 	)
+	parser.add_argument(
+		"--worker_count",
+		type=int,
+		default=8,
+		help="Number of concurrent worker threads (default: 8).",
+	)
+	parser.add_argument(
+		"--per_key_max_concurrency",
+		type=int,
+		default=3,
+		help="Maximum concurrent requests per API key (default: 3).",
+	)
+	parser.add_argument(
+		"--per_key_daily_limit",
+		type=int,
+		default=300,
+		help="Maximum daily requests per API key (default: 300).",
+	)
+	parser.add_argument(
+		"--progress_interval",
+		type=int,
+		default=10,
+		help="Print progress every N completed records (default: 10).",
+	)
 
 	return parser.parse_args()
 
 
 def validate_paths(args: argparse.Namespace) -> None:
-	required_files = [args.input_file, args.prompt_file, args.api_keys_file]
-	for path in required_files:
-		if not path.exists():
-			raise FileNotFoundError(f"Required file does not exist: {path}")
+	if not args.input_file.exists():
+		raise FileNotFoundError(f"Required input path does not exist: {args.input_file}")
+	if not args.prompt_file.exists():
+		raise FileNotFoundError(f"Required file does not exist: {args.prompt_file}")
+	if not args.api_keys_file.exists():
+		raise FileNotFoundError(f"Required file does not exist: {args.api_keys_file}")
 
 
 def load_api_key(api_config_path: Path) -> str:
@@ -550,64 +698,115 @@ def load_api_key(api_config_path: Path) -> str:
 def run(args: argparse.Namespace) -> RunStats:
 	validate_paths(args)
 
-	key_pool = KeyPool(args.api_keys_file)
+	scheduler = KeyScheduler(
+		args.api_keys_file,
+		max_concurrency_per_key=args.per_key_max_concurrency,
+		daily_limit=args.per_key_daily_limit,
+	)
+
 	raw_prompt = args.prompt_file.read_text(encoding="utf-8")
 	prompt_template = sanitize_prompt_template(raw_prompt)
 	use_hard_constraints = args.use_hard_constraints == "Yes"
 	system_prompt = build_system_prompt(prompt_template, use_hard_constraints)
+	enable_timing = args.enable_timing == "Yes"
 
-	records = list(iter_records(load_json_file(args.input_file)))
+	input_json_files = iter_input_json_files(args.input_file)
+	records: List[Dict[str, Any]] = []
+	for input_json_file in input_json_files:
+		records.extend(iter_records(load_json_file(input_json_file)))
 	stats = RunStats(total=len(records))
 
 	processed_pmids = load_state_pmids(args.state_file)
 
-	print("=" * 72)
-	print("Baichuan Triple Extraction")
-	print("=" * 72)
-	print(f"Input records: {stats.total}")
-	print(f"Already processed PMIDs in state: {len(processed_pmids)}")
-	print(f"Output JSONL: {args.output_jsonl}")
-	print(f"Usage JSONL: {args.usage_jsonl}")
-	print(f"Failed JSONL: {args.failed_jsonl}")
-	print(f"temperature={args.temperature}, top_p={args.top_p}, top_k={args.top_k}, thinking_budget_tokens={args.thinking_budget_tokens}, use_hard_constraints={args.use_hard_constraints}")
-	print("=" * 72)
-
-	session = requests.Session()
-	stop_requested = False
-
+	# Build task list (filter already processed)
+	tasks: List[tuple] = []
 	for index, record in enumerate(records, start=1):
 		pmid = str(record.get("PMID", "")).strip()
 		if not pmid:
 			pmid = f"missing_pmid_{index}"
-
 		if pmid in processed_pmids:
-			stats.skipped += 1
+			stats.skipped += 1  # single-threaded here, safe
 			continue
+		tasks.append((index, record, pmid))
+
+	print("=" * 72)
+	print("Baichuan Triple Extraction (Concurrent)")
+	print("=" * 72)
+	print(f"Input source: {args.input_file}")
+	print(f"Input JSON files: {len(input_json_files)}")
+	print(f"Input records: {stats.total}")
+	print(f"Already processed: {stats.snapshot()['skipped']}")
+	print(f"To process: {len(tasks)}")
+	print(f"Workers: {args.worker_count}")
+	print(f"{scheduler.status_summary()}")
+	print(f"Output JSONL: {args.output_jsonl}")
+	print(f"Usage JSONL: {args.usage_jsonl}")
+	print(f"Failed JSONL: {args.failed_jsonl}")
+	print(
+		f"temperature={args.temperature}, top_p={args.top_p}, top_k={args.top_k}, "
+		f"thinking_budget_tokens={args.thinking_budget_tokens}, "
+		f"use_hard_constraints={args.use_hard_constraints}"
+	)
+	print("=" * 72)
+
+	file_lock = threading.Lock()
+	stop_event = threading.Event()
+	completed_count = [0]
+	count_lock = threading.Lock()
+
+	def process_record(index: int, record: Dict[str, Any], pmid: str) -> None:
+		"""Process a single record: acquire key, call API, write results."""
+		if stop_event.is_set():
+			return
 
 		title = str(record.get("Title", ""))
 		abstract = str(record.get("Abstract", ""))
 		input_text = normalize_record_text(title, abstract)
 
 		if len(input_text) > args.max_chars:
-			append_jsonl(
-				args.truncation_jsonl,
-				{
-					"PMID": pmid,
-					"original_len": len(input_text),
-					"truncated_len": args.max_chars,
-					"timestamp": utc_now_iso(),
-				},
-			)
+			with file_lock:
+				append_jsonl(
+					args.truncation_jsonl,
+					{
+						"PMID": pmid,
+						"original_len": len(input_text),
+						"truncated_len": args.max_chars,
+						"timestamp": utc_now_iso(),
+					},
+				)
 			input_text = input_text[: args.max_chars]
-			stats.truncated_records += 1
+			stats.inc_truncated()
 
 		user_prompt = build_user_prompt(input_text)
-		record_done = False
-		while not record_done:
+
+		while not stop_event.is_set():
+			try:
+				api_key = scheduler.acquire_key(timeout=60.0)
+			except KeyAcquireTimeoutError:
+				continue
+			if api_key is None:
+				stats.inc_failed()
+				with file_lock:
+					append_jsonl(
+						args.failed_jsonl,
+						{
+							"PMID": pmid,
+							"error_reason": "All API keys exhausted or daily-capped",
+							"timestamp": utc_now_iso(),
+						},
+					)
+				print(
+					f"[KeyScheduler] No available keys. "
+					f"Failing PMID {pmid}. Stopping."
+				)
+				stop_event.set()
+				return
+
+			session = requests.Session()
 			try:
 				triples, usage = extract_with_retry(
 					session=session,
-					api_key=key_pool.current,
+					api_key=api_key,
 					model=args.model,
 					system_prompt=system_prompt,
 					user_prompt=user_prompt,
@@ -619,33 +818,57 @@ def run(args: argparse.Namespace) -> RunStats:
 					max_tokens=args.max_tokens,
 					timeout_sec=args.timeout_sec,
 					thinking_budget_tokens=args.thinking_budget_tokens,
-					enable_timing=args.enable_timing == "Yes",
+					enable_timing=enable_timing,
 				)
 
-				written_for_record = 0
-				for triple in triples:
-					output_item = {"PMID": pmid, **triple}
-					append_jsonl(args.output_jsonl, output_item)
-					written_for_record += 1
+				written = 0
+				with file_lock:
+					for triple in triples:
+						append_jsonl(args.output_jsonl, {"PMID": pmid, **triple})
+						written += 1
+					append_jsonl(
+						args.usage_jsonl,
+						{
+							"PMID": pmid,
+							"completion_tokens": int(
+								usage.get("completion_tokens", 0) or 0
+							),
+							"prompt_tokens": int(
+								usage.get("prompt_tokens", 0) or 0
+							),
+							"total_tokens": int(
+								usage.get("total_tokens", 0) or 0
+							),
+							"timestamp": utc_now_iso(),
+						},
+					)
+					append_state_pmid(args.state_file, pmid)
 
-				append_jsonl(
-					args.usage_jsonl,
-					{
-						"PMID": pmid,
-						"completion_tokens": int(usage.get("completion_tokens", 0) or 0),
-						"prompt_tokens": int(usage.get("prompt_tokens", 0) or 0),
-						"total_tokens": int(usage.get("total_tokens", 0) or 0),
-						"timestamp": utc_now_iso(),
-					},
-				)
+				stats.inc_success(written)
 
-				stats.success_records += 1
-				stats.total_triples += written_for_record
-				record_done = True
-			except APIFatal429Error as exc:
-				next_key = key_pool.advance()
-				if next_key is None:
-					stats.failed_records += 1
+				with count_lock:
+					completed_count[0] += 1
+					cc = completed_count[0]
+				if cc % args.progress_interval == 0 or cc == len(tasks):
+					snap = stats.snapshot()
+					current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+					print(
+						f"Progress {cc}/{len(tasks)} | "
+						f"success={snap['success']}, "
+						f"failed={snap['failed']}, "
+						f"triples={snap['triples']} | "
+						f"{scheduler.status_summary()} | "
+						f"time={current_time}"
+					)
+
+				return  # Done with this record
+
+			except APIFatal429Error:
+				scheduler.mark_exhausted(api_key)
+				continue  # Try with another key
+			except Exception as exc:  # pylint: disable=broad-except
+				stats.inc_failed()
+				with file_lock:
 					append_jsonl(
 						args.failed_jsonl,
 						{
@@ -654,45 +877,35 @@ def run(args: argparse.Namespace) -> RunStats:
 							"timestamp": utc_now_iso(),
 						},
 					)
-					print("[KeyPool] All API keys exhausted. Stopping run.")
-					stop_requested = True
-					record_done = True
-				else:
-					print(f"[KeyPool] Retrying PMID {pmid} with new key.")
-			except Exception as exc:  # pylint: disable=broad-except
-				stats.failed_records += 1
-				append_jsonl(
-					args.failed_jsonl,
-					{
-						"PMID": pmid,
-						"error_reason": str(exc),
-						"timestamp": utc_now_iso(),
-					},
+				with count_lock:
+					completed_count[0] += 1
+				return
+			finally:
+				scheduler.release_key(api_key)
+				session.close()
+
+	# ---- Execute with thread pool ----
+	with ThreadPoolExecutor(max_workers=args.worker_count) as executor:
+		futures: Dict[Any, str] = {}
+		for idx, rec, pid in tasks:
+			if stop_event.is_set():
+				break
+			future = executor.submit(process_record, idx, rec, pid)
+			futures[future] = pid
+
+		for future in as_completed(futures):
+			try:
+				future.result()
+			except Exception as exc:
+				print(
+					f"[Error] Unexpected worker error for "
+					f"PMID {futures[future]}: {exc}"
 				)
-				record_done = True
+			if stop_event.is_set():
+				for f in futures:
+					f.cancel()
+				break
 
-		if stop_requested:
-			break
-
-		append_state_pmid(args.state_file, pmid)
-		processed_pmids.add(pmid)
-
-		if args.sleep_sec > 0:
-			time.sleep(args.sleep_sec)
-
-		if index % 20 == 0 or index == stats.total:
-			print(
-				f"Progress {index}/{stats.total} | "
-				f"success={stats.success_records}, "
-				f"failed={stats.failed_records}, "
-				f"skipped={stats.skipped}, "
-				f"triples={stats.total_triples}"
-			)
-
-		if stop_requested:
-			break
-
-	session.close()
 	return stats
 
 

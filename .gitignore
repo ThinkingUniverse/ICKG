@@ -6,3 +6,4 @@ scripts/Triple_extraction/API_config.json
 .idea/
 results/
 scripts/Triple_extraction/API.txt
+/scripts/Triple_extraction/__pycache__
