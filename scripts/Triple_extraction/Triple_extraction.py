@@ -235,7 +235,9 @@ def call_baichuan(
 	max_tokens: int,
 	timeout_sec: int,
 	thinking_budget_tokens: int,
+	enable_timing: bool = False,
 ) -> tuple[str, Dict[str, Any]]:
+	func_start = time.perf_counter() if enable_timing else 0
 	headers = {
 		"Content-Type": "application/json",
 		"Authorization": f"Bearer {api_key}",
@@ -255,26 +257,37 @@ def call_baichuan(
 	if thinking_budget_tokens > 0:
 		payload["thinking"] = {"budget_tokens": thinking_budget_tokens}
 
-	response = session.post(API_URL, headers=headers, json=payload, timeout=timeout_sec)
-	if response.status_code == 429:
-		raise APIFatal429Error("429 Client Error: API quota exhausted")
-	response.raise_for_status()
+	try:
+		if enable_timing:
+			post_start = time.perf_counter()
+		response = session.post(API_URL, headers=headers, json=payload, timeout=timeout_sec)
+		if enable_timing:
+			post_elapsed_sec = time.perf_counter() - post_start
+			print(f"[Timing] session.post cost: {post_elapsed_sec:.4f}s")
 
-	body = response.json()
-	choices = body.get("choices", [])
-	if not choices:
-		raise ValueError("No choices returned from API.")
+		if response.status_code == 429:
+			raise APIFatal429Error("429 Client Error: API quota exhausted")
+		response.raise_for_status()
 
-	message = choices[0].get("message", {})
-	content = message.get("content")
-	if not isinstance(content, str) or not content.strip():
-		raise ValueError("Empty or invalid content in API response.")
+		body = response.json()
+		choices = body.get("choices", [])
+		if not choices:
+			raise ValueError("No choices returned from API.")
 
-	usage = body.get("usage", {})
-	if not isinstance(usage, dict):
-		usage = {}
+		message = choices[0].get("message", {})
+		content = message.get("content")
+		if not isinstance(content, str) or not content.strip():
+			raise ValueError("Empty or invalid content in API response.")
 
-	return content, usage
+		usage = body.get("usage", {})
+		if not isinstance(usage, dict):
+			usage = {}
+
+		return content, usage
+	finally:
+		if enable_timing:
+			func_elapsed_sec = time.perf_counter() - func_start
+			print(f"[Timing] call_baichuan total cost: {func_elapsed_sec:.4f}s")
 
 
 def call_baichuan_with_quota_retry(
@@ -289,6 +302,7 @@ def call_baichuan_with_quota_retry(
 	max_tokens: int,
 	timeout_sec: int,
 	thinking_budget_tokens: int,
+	enable_timing: bool = False,
 ) -> tuple[str, Dict[str, Any]]:
 	"""Call ``call_baichuan`` up to ``_QUOTA_MAX_ATTEMPTS`` times for 429s.
 
@@ -309,6 +323,7 @@ def call_baichuan_with_quota_retry(
 				max_tokens=max_tokens,
 				timeout_sec=timeout_sec,
 				thinking_budget_tokens=thinking_budget_tokens,
+				enable_timing=enable_timing,
 			)
 		except APIFatal429Error:
 			print(
@@ -334,6 +349,7 @@ def extract_with_retry(
 	max_tokens: int,
 	timeout_sec: int,
 	thinking_budget_tokens: int,
+	enable_timing: bool = False,
 ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
 	last_error = "Unknown error"
 
@@ -351,6 +367,7 @@ def extract_with_retry(
 				max_tokens=max_tokens,
 				timeout_sec=timeout_sec,
 				thinking_budget_tokens=thinking_budget_tokens,
+				enable_timing=enable_timing,
 			)
 			triples = parse_triples_json(model_text)
 			return triples, usage
@@ -499,6 +516,13 @@ def parse_args() -> argparse.Namespace:
 		default="No",
 		help="Yes to include the hard-constraint block in the system prompt; No to omit it.",
 	)
+	parser.add_argument(
+		"--enable_timing",
+		type=str,
+		choices=["Yes", "No"],
+		default="No",
+		help="Yes to enable timing logs for API calls; No to disable.",
+	)
 
 	return parser.parse_args()
 
@@ -595,6 +619,7 @@ def run(args: argparse.Namespace) -> RunStats:
 					max_tokens=args.max_tokens,
 					timeout_sec=args.timeout_sec,
 					thinking_budget_tokens=args.thinking_budget_tokens,
+					enable_timing=args.enable_timing == "Yes",
 				)
 
 				written_for_record = 0
