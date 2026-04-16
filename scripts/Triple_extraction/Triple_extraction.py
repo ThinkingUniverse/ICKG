@@ -648,14 +648,14 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--worker_count",
 		type=int,
-		default=8,
-		help="Number of concurrent worker threads (default: 8).",
+		default=12,
+		help="Number of concurrent worker threads (default: 12).",
 	)
 	parser.add_argument(
 		"--per_key_max_concurrency",
 		type=int,
-		default=3,
-		help="Maximum concurrent requests per API key (default: 3).",
+		default=4,
+		help="Maximum concurrent requests per API key (default: 4).",
 	)
 	parser.add_argument(
 		"--per_key_daily_limit",
