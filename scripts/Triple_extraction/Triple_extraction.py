@@ -622,7 +622,7 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument(
 		"--thinking_budget_tokens",
 		type=int,
-		default=4000,
+		default=5188,
 		help="Thinking budget tokens; set 0 to disable.",
 	)
 	parser.add_argument(

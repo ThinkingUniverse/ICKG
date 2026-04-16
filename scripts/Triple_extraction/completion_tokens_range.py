@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+from statistics import median
 
 
 def analyze_completion_tokens(jsonl_path: Path) -> None:
@@ -13,6 +14,7 @@ def analyze_completion_tokens(jsonl_path: Path) -> None:
 	max_pmid = None
 	valid_count = 0
 	invalid_count = 0
+	tokens_list = []
 
 	with jsonl_path.open("r", encoding="utf-8") as f:
 		for line_no, line in enumerate(f, start=1):
@@ -29,6 +31,7 @@ def analyze_completion_tokens(jsonl_path: Path) -> None:
 				continue
 
 			valid_count += 1
+			tokens_list.append(tokens)
 			if min_tokens is None or tokens < min_tokens:
 				min_tokens = tokens
 			if max_tokens is None or tokens > max_tokens:
@@ -43,7 +46,12 @@ def analyze_completion_tokens(jsonl_path: Path) -> None:
 		print("未找到可用的 completion_tokens 数据。")
 		return
 
+	mean_tokens = sum(tokens_list) / valid_count
+	median_tokens = median(tokens_list)
+
 	print(f"completion_tokens 范围: {min_tokens} ~ {max_tokens}")
+	print(f"completion_tokens 中位数: {median_tokens}")
+	print(f"completion_tokens 均值: {mean_tokens:.2f}")
 	print(f"completion_tokens 最大值对应 PMID: {max_pmid}")
 
 
