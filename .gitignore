@@ -7,3 +7,6 @@ scripts/Triple_extraction/API_config.json
 results/
 scripts/Triple_extraction/API.txt
 /scripts/Triple_extraction/__pycache__
+.github/
+scripts/Triple_extraction/Available.txt
+scripts/Triple_extraction/Exhaust.txt
