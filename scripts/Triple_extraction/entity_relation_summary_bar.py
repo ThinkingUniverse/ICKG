@@ -6,14 +6,46 @@
 """
 
 import json
+import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
-from collections import defaultdict, Counter
+from collections import Counter
 from pathlib import Path
 
 # 设置中文字体支持
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
+
+
+def parse_args():
+    """
+    解析命令行参数
+    """
+    parser = argparse.ArgumentParser(
+        description='统计三元组数据中的实体类型、关系类型和唯一实体'
+    )
+    parser.add_argument(
+        '--input-file',
+        required=True,
+        help='输入JSONL文件路径'
+    )
+    parser.add_argument(
+        '--output-dir',
+        default=r'.\results\entity_relation_summary_bar',
+        help='输出目录路径（默认: .\\results\\entity_relation_summary_bar）'
+    )
+    parser.add_argument(
+        '--min-count',
+        type=int,
+        default=50,
+        help='关系类型柱状图的最小出现次数阈值（默认: 50）'
+    )
+
+    args = parser.parse_args()
+    if args.min_count < 0:
+        parser.error('--min-count 不能为负数')
+
+    return args
 
 def load_triples(jsonl_path):
     """
@@ -139,13 +171,11 @@ def main():
     """
     主函数
     """
-    # 定义路径
-    script_dir = Path(__file__).parent
-    data_dir = Path(script_dir).parent.parent / 'data' / 'Fine_tuning_dataset'
-    jsonl_file = data_dir / 'triples_baichuan_m3_plus.jsonl'
+    args = parse_args()
+    jsonl_file = Path(args.input_file)
     
     # 创建结果输出目录
-    output_dir = Path(script_dir).parent.parent / 'results' / 'entity_relation_summary_bar'
+    output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # 检查输入文件是否存在
@@ -192,12 +222,12 @@ def main():
     print(f"关系类型总数：{len(relation_counter)}")
     print(relation_df.to_string(index=False))
     
-    # 生成关系类型柱状图（只显示出现次数 >= 50 的关系类型）
-    filtered_relation_counter = {k: v for k, v in relation_counter.items() if v >= 50}
+    # 生成关系类型柱状图（只显示出现次数 >= min_count 的关系类型）
+    filtered_relation_counter = {k: v for k, v in relation_counter.items() if v >= args.min_count}
     generate_bar_chart(
         filtered_relation_counter,
         output_dir / 'relation_types_summary.pdf',
-        '关系类型分布 (出现次数 >= 50)',
+        f'关系类型分布',
         '关系类型',
         '出现次数'
     )
