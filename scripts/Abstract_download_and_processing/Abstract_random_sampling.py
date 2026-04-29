@@ -1,3 +1,8 @@
+# Purpose: Randomly sample up to 5000 PubMed abstract records from the merged source JSON,
+# excluding PMIDs that have already appeared in previous sampled output files, and save the result as the next indexed sample file.
+# 用途：从合并后的 PubMed 摘要 JSON 中随机抽取最多 5000 条记录，排除已在历史抽样结果中出现过的 PMID，
+# 并将结果保存为下一个递增编号的抽样文件。
+
 import json
 import random
 import re
