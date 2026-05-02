@@ -1,3 +1,5 @@
+# Purpose: Analyze completion_tokens statistics (min/max/median/mean) from a JSONL file and report the PMID with the maximum completion_tokens.
+# 作用：统计 JSONL 文件中 completion_tokens 的最小值/最大值/中位数/均值，并输出 completion_tokens 最大值对应的 PMID。
 import argparse
 import json
 from pathlib import Path
