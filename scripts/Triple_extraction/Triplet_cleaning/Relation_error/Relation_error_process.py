@@ -1,6 +1,7 @@
 # Process relation-error triples and merge them into the relation-correct dataset.
 # 处理 relation 不在预定义类型中的三元组，并将清洗结果合并到关系正确的数据集中。
 
+import argparse
 import csv
 import json
 from collections import Counter
@@ -23,6 +24,44 @@ MATCH = "Match"
 REVERSE = "Reverse"
 DELETE = "Delete"
 VALID_ACTIONS = {MATCH, REVERSE, DELETE}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="处理关系错误三元组，并将清洗结果合并到关系正确数据集中。",
+        add_help=False,
+    )
+    parser.add_argument(
+        "--rules-path",
+        type=Path,
+        default=RULES_PATH,
+        help="人工映射规则 CSV 文件路径。",
+    )
+    parser.add_argument(
+        "--relation-error-path",
+        type=Path,
+        default=RELATION_ERROR_PATH,
+        help="待清洗的 relation 错误三元组 JSONL 文件路径。",
+    )
+    parser.add_argument(
+        "--temp-correct-path",
+        type=Path,
+        default=TEMP_CORRECT_PATH,
+        help="关系正确临时数据集 JSONL 文件路径。",
+    )
+    parser.add_argument(
+        "--output-path",
+        type=Path,
+        default=OUTPUT_PATH,
+        help="合并后的输出 JSONL 文件路径。",
+    )
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="显示帮助信息并退出。",
+    )
+    return parser.parse_args()
 
 
 def load_rules(rules_path: Path) -> dict[str, tuple[str, str]]:
@@ -114,9 +153,11 @@ def merge_jsonl(temp_correct_path: Path, cleaned_triples: list[dict], output_pat
 
 
 def main() -> None:
-    rules = load_rules(RULES_PATH)
-    cleaned_triples, stats = clean_relation_error_triples(RELATION_ERROR_PATH, rules)
-    merged_total = merge_jsonl(TEMP_CORRECT_PATH, cleaned_triples, OUTPUT_PATH)
+    args = parse_args()
+
+    rules = load_rules(args.rules_path)
+    cleaned_triples, stats = clean_relation_error_triples(args.relation_error_path, rules)
+    merged_total = merge_jsonl(args.temp_correct_path, cleaned_triples, args.output_path)
 
     print(f"rules_loaded: {len(rules)}")
     print(f"matched: {stats[MATCH]}")
@@ -124,7 +165,7 @@ def main() -> None:
     print(f"deleted: {stats[DELETE]}")
     print(f"cleaned_relation_error_triples: {len(cleaned_triples)}")
     print(f"merged_total: {merged_total}")
-    print(f"output_path: {OUTPUT_PATH}")
+    print(f"output_path: {args.output_path}")
 
 
 if __name__ == "__main__":

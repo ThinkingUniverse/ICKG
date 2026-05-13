@@ -1,6 +1,7 @@
 # English: Add global and per-PMID IDs to each triple in the JSONL dataset.
 # 中文：为 JSONL 数据集中的每条三元组添加全局 ID 和同一 PMID 下的局部 ID。
 
+import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -52,10 +53,30 @@ def add_ids(input_file: Path = INPUT_FILE, output_file: Path = OUTPUT_FILE) -> i
     return total_count
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="为 JSONL 三元组添加 ID1 和 ID2。")
+    parser.add_argument(
+        "-i",
+        "--input",
+        type=Path,
+        default=INPUT_FILE,
+        help=f"输入 JSONL 文件路径，默认为: {INPUT_FILE}",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=OUTPUT_FILE,
+        help=f"输出 JSONL 文件路径，默认为: {OUTPUT_FILE}",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    written_count = add_ids()
+    args = parse_args()
+    written_count = add_ids(args.input, args.output)
     print(f"Added IDs to {written_count} triples.")
-    print(f"Output file: {OUTPUT_FILE}")
+    print(f"Output file: {args.output}")
 
 
 if __name__ == "__main__":

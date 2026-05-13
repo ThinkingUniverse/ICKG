@@ -1,40 +1,13 @@
-# English: Split JSONL triples by low-frequency entity types.
-# Chinese: Count entity type frequency and write low-frequency entity triples separately.
+# English: Identify low-frequency entity types in a JSONL triples file and split records into error/correct outputs via command-line arguments.
+# Chinese: 通过命令行参数读取 JSONL 三元组文件，识别低频实体类型，并将记录拆分为错误输出和正确输出。
 import argparse
 import json
 from collections import Counter
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_INPUT = (
-    PROJECT_ROOT
-    / "data"
-    / "Fine_tuning_dataset"
-    / "processed"
-    / "Format_error"
-    / "triples_baichuan_m3_Add_ID_Format_correct.jsonl"
-)
-DEFAULT_ERROR_OUTPUT = (
-    PROJECT_ROOT
-    / "data"
-    / "Fine_tuning_dataset"
-    / "processed"
-    / "Entity_error"
-    / "Entity_error.jsonl"
-)
-DEFAULT_CORRECT_OUTPUT = (
-    PROJECT_ROOT
-    / "data"
-    / "Fine_tuning_dataset"
-    / "processed"
-    / "Entity_error"
-    / "triples_baichuan_m3_Add_ID_Format_correct_Error_entity_temp.jsonl"
-)
-
-
 def count_entity_types(jsonl_path: Path) -> tuple[Counter[str], int, int]:
-    """Count merged frequencies of head_type and tail_type from a JSONL file."""
+    """统计 JSONL 文件中 head_type 和 tail_type 的合并频次。"""
     type_counter: Counter[str] = Counter()
     valid_lines = 0
     invalid_lines = 0
@@ -74,7 +47,7 @@ def split_by_error_entity(
     correct_output_path: Path,
     low_frequency_types: set[str],
 ) -> tuple[int, int, int]:
-    """Write low-frequency entity triples and triples without low-frequency types."""
+    """将低频实体三元组与非低频实体三元组分别写入不同文件。"""
     error_lines = 0
     correct_lines = 0
     invalid_lines = 0
@@ -121,39 +94,49 @@ def split_by_error_entity(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Split triples whose head_type or tail_type frequency is below the "
-            "threshold from triples without low-frequency entity types."
-        )
+        description="按实体类型频次拆分三元组，筛出包含低频 head_type 或 tail_type 的记录。",
+        epilog=(
+            "示例:\n"
+            "  python Entity_error.py "
+            "--input data/Fine_tuning_dataset/processed/Format_error/input.jsonl "
+            "--error-output data/Fine_tuning_dataset/processed/Entity_error/error.jsonl "
+            "--correct-output data/Fine_tuning_dataset/processed/Entity_error/correct.jsonl "
+            "--threshold 1000"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+        add_help=False,
     )
+    parser._positionals.title = "位置参数"
+    parser._optionals.title = "可选参数"
+    parser.add_argument("-h", "--help", action="help", help="显示此帮助信息并退出。")
     parser.add_argument(
         "--input",
         type=Path,
-        default=DEFAULT_INPUT,
-        help="Input JSONL file path.",
+        required=True,
+        help="输入 JSONL 文件路径。",
     )
     parser.add_argument(
         "--error-output",
         type=Path,
-        default=DEFAULT_ERROR_OUTPUT,
-        help="Output JSONL path for triples containing low-frequency entity types.",
+        required=True,
+        help="包含低频实体类型的错误记录输出路径。",
     )
     parser.add_argument(
         "--correct-output",
         type=Path,
-        default=DEFAULT_CORRECT_OUTPUT,
-        help="Output JSONL path for triples without low-frequency entity types.",
+        required=True,
+        help="不包含低频实体类型的正确记录输出路径。",
     )
     parser.add_argument(
         "--threshold",
         type=int,
         default=1000,
-        help="Low-frequency threshold. Types with frequency below this value are selected.",
+        help="低频阈值，小于该值的实体类型会被判定为低频。默认值：1000。",
     )
     args = parser.parse_args()
 
     if not args.input.exists():
-        print(f"Input file does not exist: {args.input}")
+        print(f"输入文件不存在: {args.input}")
         return
 
     type_counter, valid_lines, invalid_lines = count_entity_types(args.input)
@@ -170,26 +153,26 @@ def main() -> None:
         low_frequency_types,
     )
 
-    print(f"Input file: {args.input}")
-    print(f"Valid records: {valid_lines}")
-    print(f"Invalid records while counting: {invalid_lines}")
-    print(f"Unique entity types: {len(type_counter)}")
-    print("\nAll entity type frequencies, sorted descending:")
+    print(f"输入文件: {args.input}")
+    print(f"有效记录数: {valid_lines}")
+    print(f"统计阶段无效记录数: {invalid_lines}")
+    print(f"实体类型总数: {len(type_counter)}")
+    print("\n全部实体类型频次（按降序排序）:")
     for entity_type, count in type_counter.most_common():
         print(f"{entity_type} {count}")
 
-    print(f"Threshold: {args.threshold}")
-    print(f"Low-frequency type count: {len(low_frequency_types)}")
-    print("Selected low-frequency types, sorted ascending:")
+    print(f"阈值: {args.threshold}")
+    print(f"低频实体类型数量: {len(low_frequency_types)}")
+    print("筛选出的低频实体类型（按升序排序）:")
     for entity_type, count in sorted(
         ((t, type_counter[t]) for t in low_frequency_types), key=lambda x: (x[1], x[0])
     ):
         print(f"{entity_type} {count}")
-    print(f"Invalid records while splitting: {split_invalid_lines}")
-    print(f"Low-frequency entity triples: {error_lines}")
-    print(f"Triples without low-frequency entity types: {correct_lines}")
-    print(f"Error output file: {args.error_output}")
-    print(f"Correct output file: {args.correct_output}")
+    print(f"拆分阶段无效记录数: {split_invalid_lines}")
+    print(f"低频实体三元组数量: {error_lines}")
+    print(f"非低频实体三元组数量: {correct_lines}")
+    print(f"错误输出文件: {args.error_output}")
+    print(f"正确输出文件: {args.correct_output}")
 
 
 if __name__ == "__main__":

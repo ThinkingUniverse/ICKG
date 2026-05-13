@@ -57,22 +57,28 @@ def count_entity_types(jsonl_path: Path) -> tuple[Counter[str], int, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
+        add_help=False,
         description=(
-            "Count head_type/tail_type frequencies and print entity types whose "
-            "frequency is below the threshold."
+            "统计 head_type 和 tail_type 的频次，并输出频次低于阈值的实体类型。"
         )
+    )
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="显示此帮助信息并退出。",
     )
     parser.add_argument(
         "--input",
         type=Path,
         default=DEFAULT_INPUT,
-        help="Input JSONL file path.",
+        help="输入 JSONL 文件路径。",
     )
     parser.add_argument(
         "--threshold",
         type=int,
         default=1000,
-        help="Low-frequency threshold. Types with frequency below this value are reported.",
+        help="低频阈值。频次低于该值的实体类型会被输出。",
     )
     args = parser.parse_args()
 

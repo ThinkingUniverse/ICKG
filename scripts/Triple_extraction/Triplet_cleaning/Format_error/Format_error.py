@@ -1,5 +1,6 @@
-# English: Split JSONL triples into malformed records with reasons and format-correct records.
-# Chinese: Check JSONL triple format and write malformed records and correct records separately.
+# English: Validate triple records in a JSONL file and split them into malformed records with reasons and format-correct records.
+# 中文：校验 JSONL 文件中的三元组记录，并按格式错误原因与格式正确记录分别输出。
+import argparse
 import json
 from collections.abc import Sized
 from pathlib import Path
@@ -155,14 +156,45 @@ def split_by_format(
     return total_lines, valid_triples, invalid_triples
 
 
+def parse_args() -> argparse.Namespace:
+    """解析命令行参数。"""
+    parser = argparse.ArgumentParser(
+        description="检查 JSONL 三元组格式，并分别输出格式错误记录和格式正确记录。"
+    )
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=INPUT_FILE,
+        help=f"输入 JSONL 文件路径，默认：{INPUT_FILE}",
+    )
+    parser.add_argument(
+        "--error-output",
+        type=Path,
+        default=ERROR_OUTPUT_FILE,
+        help=f"格式错误记录输出路径，默认：{ERROR_OUTPUT_FILE}",
+    )
+    parser.add_argument(
+        "--correct-output",
+        type=Path,
+        default=CORRECT_OUTPUT_FILE,
+        help=f"格式正确记录输出路径，默认：{CORRECT_OUTPUT_FILE}",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    total_lines, valid_triples, invalid_triples = split_by_format()
+    args = parse_args()
+    total_lines, valid_triples, invalid_triples = split_by_format(
+        input_file=args.input,
+        error_output_file=args.error_output,
+        correct_output_file=args.correct_output,
+    )
 
     print(f"Total lines: {total_lines}")
     print(f"Valid triples: {valid_triples}")
     print(f"Invalid triples: {invalid_triples}")
-    print(f"Error output file: {ERROR_OUTPUT_FILE}")
-    print(f"Correct output file: {CORRECT_OUTPUT_FILE}")
+    print(f"Error output file: {args.error_output}")
+    print(f"Correct output file: {args.correct_output}")
 
 
 if __name__ == "__main__":

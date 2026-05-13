@@ -1,5 +1,7 @@
-# English: Split JSONL triples by predefined relation labels from the triple prompt.
-# Chinese: Count relation frequency and split triples by predefined relations in the triple prompt.
+# English: Validate relation labels in a JSONL triple dataset against predefined relation types,
+# English: then export relation statistics and split records into predefined and non-predefined outputs.
+# Chinese: 根据预定义关系类型校验 JSONL 三元组数据集中的 relation 字段，
+# Chinese: 输出关系统计结果，并将记录拆分为关系正确和关系错误两类文件。
 import argparse
 import csv
 import json
@@ -76,7 +78,7 @@ def load_predefined_relations(prompt_path: Path) -> set[str]:
     with prompt_path.open("r", encoding="utf-8") as f:
         for line in f:
             stripped_line = line.strip()
-            if stripped_line == "## Predefined Relation Types":
+            if stripped_line == "## Predefined Relation Types Table":
                 in_relation_section = True
                 continue
 
@@ -196,52 +198,59 @@ def split_by_predefined_relation(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
+        add_help=False,
         description=(
-            "Split triples by whether their relation labels are defined in the "
-            "predefined relation table of Triple_prompt.md."
+            "根据 Triple_prompt.md 中的预定义关系类型表，判断三元组的关系标签是否已定义，"
+            "并输出统计结果与拆分后的文件。"
         )
+    )
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="显示此帮助信息并退出。",
     )
     parser.add_argument(
         "--input",
         type=Path,
         default=DEFAULT_INPUT,
-        help="Input JSONL file path.",
+        help="输入的 JSONL 文件路径。",
     )
     parser.add_argument(
         "--error-output",
         type=Path,
         default=DEFAULT_ERROR_OUTPUT,
-        help="Output JSONL path for triples containing low-frequency relations.",
+        help="输出 relation 不在预定义列表中的 JSONL 文件路径。",
     )
     parser.add_argument(
         "--correct-output",
         type=Path,
         default=DEFAULT_CORRECT_OUTPUT,
-        help="Output JSONL path for triples with predefined relations.",
+        help="输出 relation 属于预定义列表的 JSONL 文件路径。",
     )
     parser.add_argument(
         "--statistics-output",
         type=Path,
         default=DEFAULT_STATISTICS_OUTPUT,
-        help="Output CSV path for relation frequency statistics.",
+        help="输出全部关系频次统计 CSV 的路径。",
     )
     parser.add_argument(
         "--predefined-statistics-output",
         type=Path,
         default=DEFAULT_PREDEFINED_STATISTICS_OUTPUT,
-        help="Output CSV path for predefined relation frequency statistics.",
+        help="输出预定义关系频次统计 CSV 的路径。",
     )
     parser.add_argument(
         "--not-predefined-statistics-output",
         type=Path,
         default=DEFAULT_NOT_PREDEFINED_STATISTICS_OUTPUT,
-        help="Output CSV path for non-predefined relation frequency statistics.",
+        help="输出非预定义关系频次统计 CSV 的路径。",
     )
     parser.add_argument(
         "--prompt",
         type=Path,
         default=DEFAULT_PROMPT,
-        help="Triple prompt path containing the predefined relation table.",
+        help="包含预定义关系类型表的 Triple_prompt.md 路径。",
     )
     args = parser.parse_args()
 
