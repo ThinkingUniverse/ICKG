@@ -1,0 +1,75 @@
+# Data processing config for Baichuan-M2-32B QLoRA fine-tuning
+# Baichuan-M2-32B QLoRA 微调的数据处理配置文件
+# 所有数据流水线脚本（01-05）共用此文件，避免参数散落在脚本里。
+
+# ===== 输入路径 / Input paths =====
+inputs:
+  # 1.6GB PubMed 合并 JSON（流式读取）
+  pubmed_merged_json: "data/pubmed_output/merge/PubMed_abstract_2016_01_01_2026_03_31.json"
+  # 第二批已清洗三元组
+  second_batch_triples_jsonl: "data/Fine_tuning_dataset/processed/Relation_error/Second_batch/triples_baichuan_m3_Add_ID_Format_Entity_Relation_Correct.jsonl"
+  # 精简版提示词（system 内容）
+  finetune_prompt_md: "prompts/Triple_prompt_v2_finetune.md"
+
+# ===== 输出根目录 / Output directory =====
+output_dir: "data/Fine_tuning_dataset/training_ready/v1"
+
+# ===== 中间产物文件名 / Intermediate file names =====
+files:
+  pmid_to_abstract: "pmid_to_abstract.jsonl"
+  pmid_to_triples:  "pmid_to_triples.jsonl"
+  sampled_pmids:    "sampled_5000_pmids.txt"
+  sampling_stats:   "sampling_stats.json"
+  sft_dataset:      "sft_dataset.jsonl"
+  train_split:      "train.jsonl"
+  val_split:        "val.jsonl"
+  test_split:       "test.jsonl"
+
+# ===== 关系映射（极低频归并到兜底关系） / Relation merge map =====
+relation_merge_map:
+  u_shaped_association_with: "associated_with"
+  inverted_u_shaped_association_with: "associated_with"
+
+# ===== 采样规则 / Sampling rules =====
+sampling:
+  total_samples: 5000          # 总采样篇数
+
+  # 按一篇摘要中三元组条数分桶（注：02 步已把每篇截断到 max_triples_per_abstract=30，
+  # 所以分桶上限 9999 实际只意味着">=16 条且 <=30 条"）
+  triple_count_buckets:
+    - { name: "A", min: 3,  max: 7,    ratio: 0.40 }   # 3-7 条 → 40%
+    - { name: "B", min: 8,  max: 15,   ratio: 0.40 }   # 8-15 条 → 40%
+    - { name: "C", min: 16, max: 9999, ratio: 0.20 }   # >=16 条 → 20%（合并原桶 C+D）
+
+  # 单篇最多保留三元组数（按 score 降序截断）
+  max_triples_per_abstract: 30
+  # 单篇最少保留（少于此值的 PMID 在桶 0 被排除）
+  min_triples_per_abstract: 3
+
+  # 每种关系至少出现在 N 篇训练样本中（低频强制纳入）
+  min_pmid_per_relation: 50
+
+  # 关系再平衡（解决 increases 异常高 / associated_with 偏低的问题）
+  rebalance:
+    # 含此关系的 PMID 在最终 5000 中占比的上限
+    max_share:
+      increases: 0.30
+    # 含此关系的 PMID 在最终 5000 中占比的下限
+    min_share:
+      associated_with: 0.35
+
+# ===== 数据集切分 / Train-Val-Test split =====
+split:
+  train_ratio: 0.90
+  val_ratio:   0.05
+  test_ratio:  0.05
+  random_seed: 42
+
+# ===== SFT 样本组装 / SFT sample formatting =====
+sft_format:
+  # JSON 输出是否使用紧凑分隔符以省 token
+  compact_json: true
+  # 是否保留 source_sentence
+  keep_source_sentence: true
+  # 是否保留 score
+  keep_score: true

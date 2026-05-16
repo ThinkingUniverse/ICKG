@@ -1,0 +1,99 @@
+# Training config for Baichuan-M2-32B QLoRA fine-tuning
+# Baichuan-M2-32B QLoRA 微调的训练配置文件
+# train_qlora.py 通过 --config 读取此文件，所有超参集中在此处。
+
+# ===== 环境变量 / Environment variables（在 import 任何 HF 库之前生效）=====
+# 国内访问 HuggingFace 用镜像加速；模型缓存路径放到大容量 SSD。
+# 已设置的真实环境变量会优先于此处（os.environ.setdefault 行为）。
+env:
+  HF_ENDPOINT: "https://hf-mirror.com"
+  HF_HOME: "/root/ICKG/models/hf"
+
+# ===== 模型 / Model =====
+model:
+  name_or_path: "baichuan-inc/Baichuan-M2-32B"   # HuggingFace 模型名或本地路径
+  trust_remote_code: true                        # Baichuan 需要执行自定义代码
+  torch_dtype: "bfloat16"                        # 计算 dtype
+  attn_implementation: "flash_attention_2"       # A100 + 长序列建议开 FA2；服务器需先 `pip install flash-attn`；
+                                                 # 若模型不支持或装不上，置为 null 走默认 eager / sdpa 注意力
+
+# ===== 4-bit 量化 / BitsAndBytes quantization =====
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"                     # nf4 量化类型
+  bnb_4bit_use_double_quant: true                # 启用 double quantization
+  bnb_4bit_compute_dtype: "bfloat16"             # 反量化后的计算精度
+
+# ===== LoRA 配置 / LoRA adapter =====
+lora:
+  r: 16                                          # 秩
+  lora_alpha: 32                                 # 缩放，alpha/r=2
+  lora_dropout: 0.05
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  target_modules:                                # 注意力 + MLP 共 7 个线性层
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+# ===== 训练超参 / SFTConfig =====
+training:
+  output_dir: "models/Baichuan-M2-32B-QLoRA-v1/checkpoints"
+  num_train_epochs: 3
+  # A100 80GB 优化：bsz=2 + grad_accum=8 保持有效 batch=16，吞吐 ~2x
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true                   # 仍保留，结合 bsz=2/max_seq=5120 稳妥
+  learning_rate: 1.0e-4                          # QLoRA 常用 1e-4 ~ 2e-4
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  optim: "paged_adamw_8bit"                      # 分页 8bit 优化器
+  bf16: true
+  max_grad_norm: 0.3
+  weight_decay: 0.001
+  logging_steps: 10
+  logging_dir: "log/Fine_tuning/tensorboard"
+  save_steps: 200
+  save_total_limit: 3
+  eval_strategy: "steps"
+  eval_steps: 200
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+  report_to: ["tensorboard", "swanlab"]          # TensorBoard 兜底（离线）+ SwanLab 主 dashboard
+  remove_unused_columns: false                   # SFTTrainer 需要保留 messages 字段
+  dataloader_num_workers: 8                      # 24 核 CPU，多开 dataloader 进程喂数据
+
+# ===== SFT-Trainer 设置 / SFT trainer settings =====
+sft:
+  # Qwen2.5 tokenizer 实测：system=1919, user p95=637, assistant p95=1573, total p95≈3949 / max≈5648。
+  # A100 80GB 有余量，提到 5120 可覆盖 99% 样本不截断；OOM 时回退 4096。
+  max_seq_length: 5120
+  packing: false                                 # 短样本可改 true 提速，但训练初期建议 false 便于调试
+  data_path: "data/Fine_tuning_dataset/training_ready/v1"
+  train_file: "train.jsonl"
+  val_file:   "val.jsonl"
+  messages_field: "messages"                     # SFTTrainer 识别的字段名
+
+# ===== 保存 LoRA adapter 的目录 / Final adapter output =====
+adapter_dir: "models/Baichuan-M2-32B-QLoRA-v1/adapter"
+# 合并 LoRA 后的完整权重目录（merge_lora.py 使用）
+merged_dir:  "models/Baichuan-M2-32B-QLoRA-v1/merged"
+
+# ===== SwanLab 实验追踪 / SwanLab tracking =====
+# 注意：API key 不写在此处，到服务器执行 `swanlab login` 即可（key 存 ~/.netrc）
+swanlab:
+  enabled: true                                  # 与 training.report_to 中是否含 "swanlab" 一致
+  project: "ICKG-Baichuan-M2-32B-QLoRA"          # SwanLab 项目名
+  workspace: "zhousy"                            # SwanLab 工作空间（个人/组织名）
+  experiment_name: "v1-5000samples-r16-lr1e-4"   # 单次实验名；多次实验请改
+  description: "Baichuan-M2-32B 4bit QLoRA on 5000 PubMed immunology abstracts, second batch"
+  mode: "cloud"                                  # cloud / local / disabled
+
+# ===== 随机种子 / Random seed =====
+seed: 42

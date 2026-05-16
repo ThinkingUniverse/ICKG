@@ -1,15 +1,35 @@
-.vscode/
-data/
-log/
+# 默认忽略 data/ 下所有内容（注意：用 /* 而非目录式排除，否则下方 negation 失效）
+/data/*
+# 但允许 v1 训练所需的 6 个文件推到 git（供服务器训练使用）
+!/data/Fine_tuning_dataset/
+/data/Fine_tuning_dataset/*
+!/data/Fine_tuning_dataset/training_ready/
+/data/Fine_tuning_dataset/training_ready/*
+!/data/Fine_tuning_dataset/training_ready/v1/
+/data/Fine_tuning_dataset/training_ready/v1/*
+!/data/Fine_tuning_dataset/training_ready/v1/train.jsonl
+!/data/Fine_tuning_dataset/training_ready/v1/val.jsonl
+!/data/Fine_tuning_dataset/training_ready/v1/test.jsonl
+!/data/Fine_tuning_dataset/training_ready/v1/sft_dataset.jsonl
+!/data/Fine_tuning_dataset/training_ready/v1/sampled_5000_pmids.txt
+!/data/Fine_tuning_dataset/training_ready/v1/sampling_stats.json
 scripts/Abstract_download_and_processing/pubmed_config.json
 scripts/Triple_extraction/API_config.json
 .idea/
 results/
 scripts/Triple_extraction/API.txt
 /scripts/Triple_extraction/__pycache__
-.github/
 scripts/Triple_extraction/Available.txt
 scripts/Triple_extraction/Exhaust.txt
 CLAUDE.local.md
 .claude/
 Training_example/
+# 服务器训练产物（base model / checkpoints / merged）不入库
+models/
+# 训练日志（TensorBoard / SwanLab 离线缓存）不入库
+log/
+# 服务器登录凭证，本地保留但不入库
+Plan/20260514/Server_Operation_Manual.md
+# Python 缓存
+__pycache__/
+*.pyc
