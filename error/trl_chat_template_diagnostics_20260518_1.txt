@@ -1,0 +1,140 @@
+=== supports_tool_calling ===
+def supports_tool_calling(processing_class) -> bool:
+    """
+    Check if the processing class's chat template can render a full tool-calling conversation.
+
+    This tests that (1) the template doesn't error when rendering a conversation with ``user → assistant (with
+    tool_calls) → tool`` roles, and (2) every part of the tool-calling exchange — the assistant's tool call name, its
+    arguments, and the tool message content — actually appears in the rendered output. Some templates silently swallow
+    `tool_calls` (e.g. the basic Llama 3 template, which only reads `message['content']`) or tool messages (e.g.
+    Cohere2, Phi3); both cases must be rejected.
+
+    For VLMs (processors), the messages are converted to multimodal format via
+    [`~trl.data_utils.prepare_multimodal_messages`] before rendering.
+
+    Args:
+        processing_class (`PreTrainedTokenizerBase` or `ProcessorMixin`):
+            Tokenizer or processor instance to check.
+
+    Returns:
+        `bool`:
+            `True` if the chat template supports tool-calling conversations, `False` otherwise.
+    """
+    if processing_class.chat_template is None:
+        return False
+
+    is_vlm = isinstance(processing_class, ProcessorMixin)
+    # Distinct sentinels so we can tell which part of the exchange a template drops.
+    _name_sentinel = "tool_name_a8f3e2b1"
+    _arg_key_sentinel = "tool_arg_key_b9d4f5c2"
+    _arg_val_sentinel = "tool_arg_val_d6e7a9f3"
+    _content_sentinel = "tool_content_c4f9a8e2"
+    tool_calls = [
+        {
+            "type": "function",
+            "function": {"name": _name_sentinel, "arguments": {_arg_key_sentinel: _arg_val_sentinel}},
+        }
+    ]
+    messages = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "", "tool_calls": tool_calls},
+        {"role": "tool", "name": _name_sentinel, "content": _content_sentinel},
+    ]
+    # VLMs expect content as [{"type": "text", "text": "..."}] instead of plain strings
+    if is_vlm:
+        messages = prepare_multimodal_messages(messages)
+
+    try:
+        rendered = processing_class.apply_chat_template(messages, tokenize=False)
+    except TemplateError:
+        # TemplateError: template rejects the role sequence (Cohere, FalconMamba, Gemma, Gemma2, Gemma3)
+        # UndefinedError (subclass): template indexes into content as a list for all roles, including tool
+        #   (Idefics2, Idefics3, LlavaNext, SmolVLM)
+        return False
+    except TypeError:
+        # Best-effort fallback for templates that reject dict args (e.g. DeepSeek-V3). This is a chat template
+        # bug (see transformers#45419), and the training chat template fixes it to avoid blocking users.
+        tool_calls[0]["function"]["arguments"] = f'{{"{_arg_key_sentinel}": "{_arg_val_sentinel}"}}'
+        try:
+            rendered = processing_class.apply_chat_template(messages, tokenize=False)
+        except TemplateError:
+            return False
+    # All four sentinels must survive: the tool name and arguments (assistant tool_calls) AND the tool message
+    # content. Templates that silently drop either side (basic Llama 3 drops tool_calls; Cohere2/Phi3 drop tool
+    # messages) will fail this check.
+    return all(s in rendered for s in (_name_sentinel, _arg_key_sentinel, _arg_val_sentinel, _content_sentinel))
+
+
+=== is_chat_template_prefix_preserving ===
+def is_chat_template_prefix_preserving(processing_class: PreTrainedTokenizerBase | ProcessorMixin) -> bool:
+    """
+    Check whether the chat template preserves prefixes when applied.
+
+    A prefix-preserving chat template renders earlier messages identically regardless of what messages follow. This
+    property is required by `_get_tool_suffix_ids`, which extracts tool response formatting tokens by comparing
+    tokenizations with and without tool messages appended.
+
+    Args:
+        processing_class (`PreTrainedTokenizerBase` or `ProcessorMixin`):
+            Tokenizer or processor instance to check.
+
+    Returns:
+        `bool`:
+            `True` if the chat template preserves prefixes, `False` otherwise.
+    """
+    # Use the same dummy messages as _get_tool_suffix_ids to test the exact property it relies on.
+    dummy_tool_calls = [{"type": "function", "function": {"name": "dummy", "arguments": {}}}]
+    messages1 = [
+        {"role": "user", "content": "dummy"},
+        {"role": "assistant", "content": "", "tool_calls": dummy_tool_calls},
+    ]
+    messages2 = [
+        {"role": "user", "content": "dummy"},
+        {"role": "assistant", "content": "", "tool_calls": dummy_tool_calls},
+        {"role": "tool", "name": "dummy", "content": "dummy"},
+    ]
+    # VLM processors expect structured list-of-blocks content, and image-token expansion only kicks in when an image
+    # is actually present, so include a dummy image to exercise the real code path.
+    is_vlm = isinstance(processing_class, ProcessorMixin)
+    if is_vlm:
+        from PIL import Image
+
+        dummy_image = Image.new("RGB", (8, 8))
+        messages1 = prepare_multimodal_messages(messages1, images=[dummy_image])
+        messages2 = prepare_multimodal_messages(messages2, images=[dummy_image])
+
+    try:
+        ids1 = processing_class.apply_chat_template(messages1, tokenize=True, return_dict=False)
+        ids2 = processing_class.apply_chat_template(
+            messages2, tokenize=True, return_dict=False, add_generation_prompt=True
+        )
+    except TypeError:
+        # Best-effort fallback for templates that reject dict args (e.g. DeepSeek-V3). This is a chat template
+        # bug (see transformers#45419), and the training chat template fixes it to avoid blocking users.
+        dummy_tool_calls = [{"type": "function", "function": {"name": "dummy", "arguments": "{}"}}]
+        messages1[1]["tool_calls"] = dummy_tool_calls
+        messages2[1]["tool_calls"] = dummy_tool_calls
+        ids1 = processing_class.apply_chat_template(messages1, tokenize=True, return_dict=False)
+        ids2 = processing_class.apply_chat_template(
+            messages2, tokenize=True, return_dict=False, add_generation_prompt=True
+        )
+
+    # VLM processors return batched output (list of lists), unbatch for single conversation
+    if is_vlm:
+        ids1 = ids1[0]
+        ids2 = ids2[0]
+
+    return ids2[: len(ids1)] == ids1
+
+
+=== runtime checks on our simplified template ===
+'{% generation %}' in chat_template: True
+supports_tool_calling(tok): False
+is_chat_template_prefix_preserving(tok): True
+
+=== template head (first 4 lines) ===
+{# Training-compatible chat template for Baichuan-M2-32B (Qwen3-style, simplified). #}
+{# 训练专用 chat template：精简后的版本，仅用于 SFTTrainer 训练期。 #}
+{# 与官方推理模板的区别： #}
+{#   1. 去掉 `tools` 分支 —— 这样 trl 的 supports_tool_calling() 返回 False， #}
+=== template length (chars): 1434 ===
