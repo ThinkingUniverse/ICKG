@@ -218,6 +218,20 @@ def main() -> None:
         # Baichuan 等模型可能没有 pad_token，使用 eos_token 兜底
         tokenizer.pad_token = tokenizer.eos_token
 
+    # trl 0.16+ 在 assistant_only_loss=True 时要求 chat_template 含 {% generation %} 标记，
+    # 否则会报 "chat template is not training-compatible"。Baichuan-M2-32B 自带模板没有这些标记，
+    # 也没有进入 trl 的自动 patch 白名单 —— 这里用同目录下手工修过的模板覆盖。
+    if cfg.get("sft", {}).get("assistant_only_loss"):
+        tpl_path = Path(__file__).resolve().parent / "baichuan_m2_training_template.jinja"
+        if tpl_path.exists():
+            tokenizer.chat_template = tpl_path.read_text(encoding="utf-8")
+            print(f"[ChatTemplate] 已加载训练用模板（含 {{% generation %}} 标记）：{tpl_path.name}")
+        else:
+            sys.exit(
+                f"[错误] assistant_only_loss=True 但未找到训练用 chat_template：{tpl_path}\n"
+                f"        请确认 baichuan_m2_training_template.jinja 与本脚本同目录。"
+            )
+
     model_kwargs: dict[str, Any] = {}
     attn_impl = mcfg.get("attn_implementation")
     if attn_impl:
