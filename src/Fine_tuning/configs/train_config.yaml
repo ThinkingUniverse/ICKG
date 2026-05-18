@@ -11,7 +11,7 @@ env:
 
 # ===== 模型 / Model =====
 model:
-  name_or_path: "baichuan-inc/Baichuan-M2-32B"   # HuggingFace 模型名或本地路径
+  name_or_path: "/root/ICKG/models/hf/Baichuan-M2-32B"   # HuggingFace 模型名或本地路径
   trust_remote_code: true                        # Baichuan 需要执行自定义代码
   torch_dtype: "bfloat16"                        # 计算 dtype
   attn_implementation: "flash_attention_2"       # A100 + 长序列建议开 FA2；服务器需先 `pip install flash-attn`；
