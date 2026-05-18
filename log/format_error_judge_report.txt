@@ -1,0 +1,5 @@
+Input file: data\Fine_tuning_dataset\processed\Format_error\Second_batch\triples_baichuan_m3_Add_ID_Format_correct.jsonl
+Total lines: 300943
+Valid triples: 300943
+Invalid triples: 0
+Result: No malformed triples found.
