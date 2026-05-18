@@ -219,11 +219,14 @@ def main() -> None:
     if attn_impl:
         model_kwargs["attn_implementation"] = attn_impl                # e.g. "flash_attention_2"
 
+    # transformers 4.45+ 用 `dtype`（替代旧 `torch_dtype`）；同时给出兼容旧 yaml 的回退
+    dtype_value = dtype_from_str(mcfg.get("dtype") or mcfg["torch_dtype"])
+
     model = AutoModelForCausalLM.from_pretrained(
         mcfg["name_or_path"],
         quantization_config=bnb_cfg,
         trust_remote_code=mcfg.get("trust_remote_code", True),
-        torch_dtype=dtype_from_str(mcfg["torch_dtype"]),
+        dtype=dtype_value,
         device_map="auto",
         **model_kwargs,
     )
@@ -281,13 +284,18 @@ def main() -> None:
     logging_dir = repo_root / tcfg.get("logging_dir", "log/Fine_tuning/tensorboard")
     logging_dir.mkdir(parents=True, exist_ok=True)
 
-    sft_config = SFTConfig(
+    # trl 0.16+ 使用 max_length（取代旧 max_seq_length）；同时兼容旧 yaml 键
+    max_length_value = sft_cfg.get("max_length") or sft_cfg.get("max_seq_length")
+
+    sft_config_kwargs: dict[str, Any] = dict(
         output_dir=str(output_dir),
         num_train_epochs=tcfg["num_train_epochs"],
         per_device_train_batch_size=tcfg["per_device_train_batch_size"],
         per_device_eval_batch_size=tcfg["per_device_eval_batch_size"],
         gradient_accumulation_steps=tcfg["gradient_accumulation_steps"],
         gradient_checkpointing=tcfg.get("gradient_checkpointing", True),
+        # 显式 use_reentrant=False，抑制 PyTorch 2.5+ 的 checkpointing warning
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         learning_rate=float(tcfg["learning_rate"]),
         lr_scheduler_type=tcfg["lr_scheduler_type"],
         warmup_ratio=tcfg["warmup_ratio"],
@@ -307,11 +315,16 @@ def main() -> None:
         report_to=tcfg["report_to"],
         remove_unused_columns=tcfg.get("remove_unused_columns", False),
         dataloader_num_workers=tcfg.get("dataloader_num_workers", 2),
-        max_seq_length=sft_cfg["max_seq_length"],
+        max_length=max_length_value,
         packing=sft_cfg.get("packing", False),
         max_steps=args.max_steps if args.max_steps is not None else -1,
         seed=seed,
     )
+    # 仅当 yaml 明确开启时才传 assistant_only_loss（避免老版 trl 不识别报错）
+    if sft_cfg.get("assistant_only_loss"):
+        sft_config_kwargs["assistant_only_loss"] = True
+
+    sft_config = SFTConfig(**sft_config_kwargs)
 
     # ------------------------------------------------------------------ #
     # 6. SwanLab init（如启用）+ SFTTrainer                                 #

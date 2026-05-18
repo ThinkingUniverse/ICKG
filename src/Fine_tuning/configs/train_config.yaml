@@ -13,7 +13,7 @@ env:
 model:
   name_or_path: "/root/ICKG/models/hf/Baichuan-M2-32B"   # HuggingFace 模型名或本地路径
   trust_remote_code: true                        # Baichuan 需要执行自定义代码
-  torch_dtype: "bfloat16"                        # 计算 dtype
+  dtype: "bfloat16"                              # transformers 4.45+ 用 dtype（脚本同时兼容旧键 torch_dtype）
   attn_implementation: "flash_attention_2"       # A100 + 长序列建议开 FA2；服务器需先 `pip install flash-attn`；
                                                  # 若模型不支持或装不上，置为 null 走默认 eager / sdpa 注意力
 
@@ -73,8 +73,12 @@ training:
 sft:
   # Qwen2.5 tokenizer 实测：system=1919, user p95=637, assistant p95=1573, total p95≈3949 / max≈5648。
   # A100 80GB 有余量，提到 5120 可覆盖 99% 样本不截断；OOM 时回退 4096。
-  max_seq_length: 5120
+  # trl 0.16+ 用 max_length（取代 max_seq_length），脚本读 max_length 优先，回退 max_seq_length 兼容旧版。
+  max_length: 5120
   packing: false                                 # 短样本可改 true 提速，但训练初期建议 false 便于调试
+  # 重要：仅在 assistant 输出 token 上计算 loss（user 摘要不参与梯度），让训练信号更聚焦。
+  # 需要 trl >= 0.16。
+  assistant_only_loss: true
   data_path: "data/Fine_tuning_dataset/training_ready/v1"
   train_file: "train.jsonl"
   val_file:   "val.jsonl"

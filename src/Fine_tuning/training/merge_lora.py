@@ -110,7 +110,7 @@ def main() -> None:
     print(f"[加载] 基础模型：{base_model}  dtype={args.torch_dtype}  device_map={device_map}")
     base = AutoModelForCausalLM.from_pretrained(
         base_model,
-        torch_dtype=dtype,
+        dtype=dtype,                                # transformers 4.45+ 使用 dtype 替代 torch_dtype
         device_map=device_map,
         trust_remote_code=cfg["model"].get("trust_remote_code", True),
     )
