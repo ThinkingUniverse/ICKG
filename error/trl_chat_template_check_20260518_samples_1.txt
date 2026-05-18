@@ -1,0 +1,5 @@
+=== 3 samples bytes equal? === True
+=== trl check FAILED: The chat template is not training-compatible (missing prefix-preservation or `{% generation %}` markers) and patching is not supported for this template. Please manually modify the chat template for training.
+=== sample#0 total=2990 assistant_in_loss=742 ===
+first 10 assistant tokens: ['<think>', '\n\n', '</think>', '\n\n', '[', '{"', 'head', '":"', 'C', 'andid']
+last 5 assistant tokens: ['8', '0', '}]', '<|im_end|>', '\n']
