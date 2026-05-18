@@ -145,6 +145,10 @@ def maybe_init_swanlab(cfg: dict) -> None:
     except ImportError:
         print("[警告] report_to 含 swanlab 但未安装 swanlab；请 `pip install swanlab`，本次跳过。", file=sys.stderr)
         return
+    # trl 0.16+ 用 max_length（取代旧 max_seq_length），这里同样做兼容回退
+    sft_block = cfg.get("sft", {})
+    max_length_value = sft_block.get("max_length") or sft_block.get("max_seq_length")
+
     swanlab.init(
         project=sw_cfg.get("project", "ICKG"),
         workspace=sw_cfg.get("workspace"),
@@ -153,7 +157,7 @@ def maybe_init_swanlab(cfg: dict) -> None:
         mode=sw_cfg.get("mode", "cloud"),
         config={                                  # 把关键超参写进 swanlab 便于多 run 对比
             "model": cfg["model"]["name_or_path"],
-            "max_seq_length": cfg["sft"]["max_seq_length"],
+            "max_length": max_length_value,
             "lora_r": cfg["lora"]["r"],
             "lora_alpha": cfg["lora"]["lora_alpha"],
             "learning_rate": cfg["training"]["learning_rate"],
