@@ -218,14 +218,19 @@ def main() -> None:
         # Baichuan 等模型可能没有 pad_token，使用 eos_token 兜底
         tokenizer.pad_token = tokenizer.eos_token
 
-    # trl 0.16+ 在 assistant_only_loss=True 时要求 chat_template 含 {% generation %} 标记，
-    # 否则会报 "chat template is not training-compatible"。Baichuan-M2-32B 自带模板没有这些标记，
-    # 也没有进入 trl 的自动 patch 白名单 —— 这里用同目录下手工修过的模板覆盖。
+    # trl 0.16+ 在 assistant_only_loss=True 时同时要求两件事：
+    #   (a) chat_template 里含字面 "{% generation %}" 标记；
+    #   (b) prefix-preservation —— 即 apply_chat_template(msgs[:k]) 必须是 apply_chat_template(msgs[:k+1]) 的前缀。
+    # Baichuan-M2-32B 自带模板两条都不满足，且不在 trl 的自动 patch 白名单内。
+    # 解决方案：训练期间用同目录下的简化版模板（去掉 tools/think 反向扫描，对每条 assistant 一视同仁），
+    # 保存 adapter 前再把官方模板写回，确保 adapter/ 目录里的 tokenizer 与 base 模型字节一致。
+    original_chat_template: str | None = None
     if cfg.get("sft", {}).get("assistant_only_loss"):
         tpl_path = Path(__file__).resolve().parent / "baichuan_m2_training_template.jinja"
         if tpl_path.exists():
+            original_chat_template = tokenizer.chat_template
             tokenizer.chat_template = tpl_path.read_text(encoding="utf-8")
-            print(f"[ChatTemplate] 已加载训练用模板（含 {{% generation %}} 标记）：{tpl_path.name}")
+            print(f"[ChatTemplate] 训练期间已切换到简化模板：{tpl_path.name}（保存前会还原为官方模板）")
         else:
             sys.exit(
                 f"[错误] assistant_only_loss=True 但未找到训练用 chat_template：{tpl_path}\n"
@@ -367,6 +372,10 @@ def main() -> None:
     adapter_dir = repo_root / cfg["adapter_dir"]
     adapter_dir.mkdir(parents=True, exist_ok=True)
     trainer.save_model(str(adapter_dir))
+    # 保存 tokenizer 前还原官方 chat_template，避免把训练用的精简模板写入 adapter/ 目录
+    if original_chat_template is not None:
+        tokenizer.chat_template = original_chat_template
+        print("[ChatTemplate] 已将官方模板还原回 tokenizer（保存到 adapter/ 用）")
     tokenizer.save_pretrained(str(adapter_dir))
     print(f"[完成] LoRA 适配器与 tokenizer 已保存 → {adapter_dir}")
 
