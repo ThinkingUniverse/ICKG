@@ -1,0 +1,62 @@
+(ickg) root@localhost:~/ICKG# python - <<'PY'
+from pathlib import Path
+from transformers import AutoTokenizer
+from trl.chat_template_utils import get_training_chat_template
+
+MODEL = "/root/ICKG/models/hf/Baichuan-M2-32B"
+TPL   = Path("src/Fine_tuning/training/baichuan_m2_training_template.jinja")
+
+tok = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True, use_fast=True)
+original = tok.chat_template
+
+msgs = [
+    {"role": "system",    "content": "You are a helpful assistant."},
+    {"role": "user",      "content": "Hello"},
+    {"role": "assistant", "content": "Hi there!"},
+    {"role": "user",      "content": "Tell me a joke"},
+    {"role": "assistant", "content": "<think>let me think</think>\n\nWhy did the chicken cross the road?"},
+]
+
+# 用官方模板渲染（baseline）
+render_orig = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
+
+# 切到训练模板再渲染
+tok.chat_template = TPL.read_text(encoding="utf-8")
+render_patched = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
+
+print("=== bytes equal? ===", render_orig == render_patched)
+if render_orig != render_patched:
+    import difflib
+    for line in difflib.unified_diff(render_orig.splitlines(), render_patched.splitlines(), lineterm=""):
+        print(line)
+
+# 让 trl 试着接受
+try:
+    get_training_chat_template(tok)
+    print("=== trl get_training_chat_template OK ===")
+except Exception as e:
+    print("=== trl check FAILED:", e)
+
+# 看 assistant token mask 是否对得上
+out = tok.apply_chat_template(
+    msgs, tokenize=True, add_generation_prompt=False,
+    return_dict=True, return_assistant_tokens_mask=True,
+)
+mask = out["assistant_masks"]
+ids  = out["input_ids"]
+n_assist = sum(mask)
+print(f"=== total tokens={len(ids)} assistant tokens (in loss)={n_assist} ===")
+# 抽几个被 mask=1 的位置看看是不是 assistant 文本
+print("first 20 assistant token strings:",
+PY    [tok.decode([t]) for t, m in zip(ids, mask) if m][:20])
+=== bytes equal? === True
+=== trl check FAILED: The chat template is not training-compatible (missing prefix-preservation or `{% generation %}` markers) and patching is not supported for this template. Please manually modify the chat template for training.
+=== total tokens=55 assistant tokens (in loss)=23 ===
+first 20 assistant token strings: ['Hi', ' there', '!', '<|im_end|>', '\n', '<think>', '\n', 'let', ' me', ' think', '\n', '</think>', '\n\n', 'Why', ' did', ' the', ' chicken', ' cross', ' the', ' road']
+
+备注（事后归纳）：
+- 此时模板版本：`{%- generation %}` 形式（带 `-` 去空白标记），并且保留官方完整的 tools/last_query_index/reasoning_content 逻辑。
+- `bytes equal? True` 说明 Jinja 层面 `{%- generation %}` 已被识别，渲染结果与官方模板字节一致。
+- `assistant_in_loss=23` 且对应 token 正好是两段 assistant 输出，说明 transformers 的 AssistantTracker 正确产出了 mask。
+- `trl check FAILED` 的根因：trl 用的是字面 substring 检查 `"{% generation %}" in chat_template`，`{%-` 形式（带 strip 标记）不匹配，所以即便 Jinja 语义等价也被拒。
+- 下一步：把模板里的 `{%- generation %}` 改成字面 `{% generation %}`，外层用 `-}}` 控制周围空白以保持 byte-equal。
