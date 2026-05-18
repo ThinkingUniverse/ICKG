@@ -43,8 +43,8 @@
                 {%- set reasoning_content = message.content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
             {%- endif %}
         {%- endif %}
-        {{- '<|im_start|>' + message.role + '\n' }}
-        {%- generation %}
+        {{- '<|im_start|>' + message.role + '\n' -}}
+        {% generation %}
         {%- if loop.index0 > ns.last_query_index %}
             {%- if loop.last or (not loop.last and reasoning_content) %}
                 {{- '<think>\n' + reasoning_content.strip('\n') + '\n</think>\n\n' + content.lstrip('\n') }}
@@ -73,8 +73,8 @@
                 {{- '}\n</tool_call>' }}
             {%- endfor %}
         {%- endif %}
-        {{- '<|im_end|>\n' }}
-        {%- endgeneration %}
+        {{- '<|im_end|>\n' -}}
+        {% endgeneration %}
     {%- elif message.role == "tool" %}
         {%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}
             {{- '<|im_start|>user' }}
