@@ -351,7 +351,108 @@ merged.save_pretrained("models/.../merged", safe_serialization=True)
 
 ---
 
-## 13. 下一步（推理阶段，下一期沟通）
+## 13. 烟测实测结果（2026-05-18）
+
+> 用 50 train + 20 eval 样本跑 max_steps=20 验证管道，**全过程 20 分 37 秒**。
+
+| 指标 | 实测值 | 含义 |
+|---|---:|---|
+| 每 optimizer step 耗时 | **61 秒** | bsz=2 × grad_accum=8 = 16 样本/step |
+| GPU 显存峰值 | **64.6 GB / 80 GB**（79%）| max_length=5120 满载，安全余量 ~15 GB |
+| GPU 利用率 | 99% | 训练期间几乎不间断 |
+| 功耗 | 423W / 400W | 满载，正常 |
+| Train loss（20 步后） | 0.152 → **0.097** | 仅证管道通，数据量太少不具备泛化意义 |
+| Eval loss | 0.124 | 同上 |
+| 全量训练时间推算（3 epoch） | **~14h 20min** | 843 步 × 61s |
+
+### 烟测阶段碰到并已修复的 3 类问题（全过程复盘存仓库 `error/`）
+
+| 问题 | 根因 | 修复 |
+|---|---|---|
+| `torch.library.custom_op` schema 不识别字符串注解 | torch 2.3/2.4 不解析 PEP 563 风格 `'torch.Tensor'` | torch 升 2.5+ cu124 |
+| `KeyError: 'max_seq_length'` | trl 0.16+ 改名 `max_length`，SwanLab 初始化漏改 | 同步 fallback 表达式 |
+| chat template 不兼容 `assistant_only_loss` | trl 0.16+ 要求 `{% generation %}` + 模板前缀保留；Baichuan-M2 官方模板有反向扫描破坏前缀保留 | 新增简化训练模板，训前覆盖 / 保存前还原 |
+
+---
+
+## 14. 全量训练 + 推理成本估算（质量优先方案）
+
+> 单价：A100 80GB ¥6.96/h；当前账户余额 ¥76.22
+
+### 14.1 训练阶段（质量优先 = 3 epoch + 业务评估）
+
+| 项目 | 时长 | 费用 |
+|---|---:|---:|
+| 3 epoch 训练（843 步 × 61s） | 14h 20min | ¥99.5 |
+| LoRA merge → bf16 完整权重 | 15 min | ¥2 |
+| test.jsonl 业务指标评估（JSON 合法率 / F1）| 10 min | ¥1.2 |
+| 意外重试余量（OOM / 网络抖动） | 0.5-1h | ¥3-7 |
+| **训练阶段小计** | **~16h** | **¥106-110** |
+
+### 14.2 推理阶段（680k 摘要批量抽取）
+
+| 路线 | 持续吞吐 | 总时长 | 费用 | 质量 |
+|---|---|---:|---:|---|
+| **bf16 vLLM（最高质量）** | 6-10 req/s | 19-31h | **¥130-220** | **完整精度，无量化损失** ✅ |
+| AWQ-Int4 vLLM | 12-18 req/s | 11-16h | ¥75-110 | 通常 <2% F1 下降，但抽取任务可能更敏感 |
+
+> **质量优先建议**：先用 bf16 跑 680k；只有当成本压力大时才用 AWQ-Int4（前提：先在 test.jsonl 上 A/B 对比，确认 AWQ 质量损失可接受）
+
+### 14.3 完整流程预算汇总（质量优先）
+
+| 阶段 | 费用区间 | 中位数 |
+|---|---:|---:|
+| 训练 + merge + 评估 + margin | ¥106-110 | ¥108 |
+| bf16 vLLM 推理 680k 摘要 | ¥130-220 | **¥170** |
+| **完整流程合计** | **¥236-330** | **¥278** |
+
+### 14.4 与当前余额对比
+
+| 资源 | 金额 |
+|---|---:|
+| 当前余额 | ¥76.22 |
+| 完整流程中位预算 | ¥278 |
+| **建议充值** | **¥200-260** |
+| 完成训练（再分阶段决定推理路线）至少需要充值 | **¥35-45** |
+
+---
+
+## 15. 推理阶段技术细节（vLLM + 32B + A100 80GB）
+
+剩余 **680,000 篇**摘要批量抽取三元组。
+
+### 输入输出 token 量
+- 输入：system 1919 + user 平均 369 = **~2288 token / 篇**
+- 输出：assistant 平均 668 / p95 1573 = **~700 token / 篇**
+- 总量：680k × (2288 + 700) ≈ **2.03B token**
+
+### 质量优先：首选 bf16 vLLM
+
+成本细分见 §14.2。**bf16 是 merge_lora.py 直接输出的格式，无需额外转换**，立即可用。
+
+### vLLM 启动参数建议
+```bash
+vllm serve /root/ICKG/models/Baichuan-M2-32B-QLoRA-v1/merged \
+  --dtype bfloat16 \
+  --max-num-seqs 32 \
+  --max-num-batched-tokens 32768 \
+  --gpu-memory-utilization 0.92 \
+  --trust-remote-code
+```
+
+### 推理超参建议
+- `temperature=0.1-0.3`：抽取任务要确定性，降低生成噪声
+- `top_p=0.95`：保留少量多样性即可
+- `max_tokens=2048`：覆盖 assistant max=2326，留余量
+
+### 如果后期想压缩成本：AWQ-Int4 路线（可选）
+1. 离线量化：`autoawq` 工具，一次性约 30 min × ¥6.96 ≈ ¥4
+2. 推理速度 ~1.7×，成本降至 bf16 的 ~55%
+3. **质量验证步骤（必做）**：在 test.jsonl 250 条上同时跑 bf16 和 AWQ-Int4，对比 P/R/F1。**质量损失 < 2% 才推荐切换**
+
+---
+
+## 16. 下一步（推理阶段，下一期沟通）
 
 - 编写 `extract_triples.py`：加载 merged 权重，对剩余 68 万篇摘要做批量抽取（vLLM 加速）
 - 编写评估脚本：JSON 合法率、实体/关系类型有效率、与 ground-truth 的 F1
@@ -359,7 +460,7 @@ merged.save_pretrained("models/.../merged", safe_serialization=True)
 
 ---
 
-## 14. 产出清单
+## 17. 产出清单
 
 ```
 prompts/
@@ -397,7 +498,7 @@ Plan/20260514/
 
 ---
 
-## 15. 致谢与参考
+## 18. 致谢与参考
 
 - HuggingFace Course: Fine-tune Large Language Models（chapter 11）
 - HuggingFace PEFT QLoRA 文档

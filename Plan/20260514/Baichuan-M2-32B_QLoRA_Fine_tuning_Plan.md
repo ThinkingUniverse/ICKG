@@ -227,16 +227,18 @@ seed: 42
 
 ---
 
-## 7. 显存预算（A100 80GB）
+## 7. 显存预算（A100 80GB，2026-05-18 烟测实测）
 
-| 项 | 估算 |
-|---|---|
-| 32B 模型权重（4bit nf4） | ~18 GB |
-| LoRA 参数（r=16，all-linear） | ~250 MB |
-| 优化器状态（paged_adamw_8bit） | ~500 MB |
-| 激活（max_seq=5120, **bsz=2**, grad ckpt 开，FA2 开） | ~28-36 GB |
-| 临时 buffer / KV cache | ~2 GB |
-| **总计** | **~50-60 GB**（A100 80GB 有 20+ GB 余量） |
+| 项 | 估算 | **烟测实测** |
+|---|---|---|
+| 32B 模型权重（4bit nf4） | ~18 GB | (含在合计中) |
+| LoRA 参数（r=16，7 层 linear） | ~250 MB | |
+| 优化器状态（paged_adamw_8bit） | ~500 MB | |
+| 激活（max_length=5120, bsz=2, grad ckpt 开，FA2 开） | ~28-36 GB | |
+| 临时 buffer / KV cache | ~2 GB | |
+| **总计** | ~50-60 GB | **64.6 GB / 80 GB（79%）** |
+
+实测每 optimizer step **61 秒**（bsz=2 × grad_accum=8 = 16 样本/step），GPU 利用率 99%，功耗 423W。
 
 进一步优化空间（如果想更快）：
 - 关 `gradient_checkpointing` → 速度 1.5-2x，但显存 +20-30 GB，可能爆
@@ -276,4 +278,40 @@ OOM 应急方案（按优先级）：
 
 ## 10. 配套文档
 
-- 服务器端从登录到训练结束的完整操作步骤：见同目录 `Server_Operation_Manual.md`（**含登录凭证，已 gitignore，不会推送到远端**）。
+- 服务器端从登录到训练结束的完整操作步骤：见同目录 `Server_Operation_Manual.md`（**含登录凭证，已 gitignore，不会推送到远端**）
+- 汇报材料：`PPT_Report.md`（数据处理 → 训练 → 合并完整流程，可入库）
+- 烟测期间踩坑的 3 类问题完整复盘：仓库根 `error/` 目录
+  - `error/torch_transformers_custom_op_schema_mismatch/`
+  - `error/swanlab_init_max_seq_length_keyerror/`
+  - `error/trl_assistant_only_loss_chat_template/`
+
+---
+
+## 11. 预算与成本结算（2026-05-18 烟测后更新，质量优先）
+
+### 训练阶段（A100 80GB ¥6.96/h，3 epoch + merge + 评估）
+
+| 项 | 时长 | 费用 |
+|---|---:|---:|
+| 3 epoch 训练（843 步 × 61s） | 14h 20min | ¥99.5 |
+| LoRA merge | 15 min | ¥2 |
+| test.jsonl 业务评估 | 10 min | ¥1.2 |
+| 意外重试 margin | 0.5-1h | ¥3-7 |
+| **训练阶段合计** | ~16h | **¥106-110** |
+
+### 推理阶段（vLLM 680k 摘要，质量优先用 bf16）
+
+| 路线 | 持续吞吐 | 总时长 | 费用 |
+|---|---|---:|---:|
+| **bf16（推荐，零量化损失）** | **6-10 req/s** | **19-31h** | **¥130-220** |
+| AWQ-Int4（可选，需先在 test.jsonl 验证质量）| 12-18 req/s | 11-16h | ¥75-110 |
+
+### 完整流程预算（质量优先）
+
+| 阶段 | 中位费用 |
+|---|---:|
+| 训练 + merge + 评估 | ¥108 |
+| bf16 推理 680k 摘要 | ¥170 |
+| **合计** | **~¥278** |
+
+> 当前余额 ¥76.22；完整流程**建议充值 ¥200-260**。若先只跑训练再决定推理路线，**至少充值 ¥35-45**。

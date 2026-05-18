@@ -6,7 +6,7 @@
 所有超参从 --config 指向的 yaml 读取，脚本本身不写死任何模型/训练参数。
 
 启动示例：
-    conda activate lckg
+    conda activate ickg
     python src/Fine_tuning/training/train_qlora.py \
         --config src/Fine_tuning/configs/train_config.yaml
 

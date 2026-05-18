@@ -82,6 +82,7 @@ sft:
   data_path: "data/Fine_tuning_dataset/training_ready/v1"
   train_file: "train.jsonl"
   val_file:   "val.jsonl"
+  test_file:  "test.jsonl"                       # 仅供 merge_lora.py 的 --test-after-merge 使用
   messages_field: "messages"                     # SFTTrainer 识别的字段名
 
 # ===== 保存 LoRA adapter 的目录 / Final adapter output =====
