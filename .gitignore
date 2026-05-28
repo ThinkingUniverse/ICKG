@@ -29,7 +29,11 @@ models/
 # 训练日志（TensorBoard / SwanLab 离线缓存）不入库
 # log/
 # 服务器登录凭证，本地保留但不入库
-Plan/20260514/Server_Operation_Manual.md
+Plan/fine-tuning/Server_Operation_Manual.md
 # Python 缓存
 __pycache__/
 *.pyc
+# 汇报
+presentation/
+# mcp
+.mcp.json
