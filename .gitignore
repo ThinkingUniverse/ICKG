@@ -28,8 +28,6 @@ Training_example/
 models/
 # 训练日志（TensorBoard / SwanLab 离线缓存）不入库
 # log/
-# 服务器登录凭证，本地保留但不入库
-Plan/fine-tuning/Server_Operation_Manual.md
 # Python 缓存
 __pycache__/
 *.pyc
