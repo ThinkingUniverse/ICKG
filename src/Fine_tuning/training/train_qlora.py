@@ -377,6 +377,17 @@ def main() -> None:
         tokenizer.chat_template = original_chat_template
         print("[ChatTemplate] 已将官方模板还原回 tokenizer（保存到 adapter/ 用）")
     tokenizer.save_pretrained(str(adapter_dir))
+
+    # —— 落盘后立即 reload 校验 chat_template，杜绝 "adapter/ 目录里保存的是训练用简化模板" 这种回归。
+    if original_chat_template is not None:
+        from transformers import AutoTokenizer as _AT
+        _check_tok = _AT.from_pretrained(str(adapter_dir), trust_remote_code=True)
+        if _check_tok.chat_template != original_chat_template:
+            raise RuntimeError(
+                "[ChatTemplate] 落盘 tokenizer 的 chat_template 与官方模板不一致，"
+                "训练脚本的还原逻辑出错。请检查 train_qlora.py 中 original_chat_template 备份与还原顺序。"
+            )
+        print("[ChatTemplate] adapter/ 目录 tokenizer 模板已校验为官方模板（与 base 模型字节一致）")
     print(f"[完成] LoRA 适配器与 tokenizer 已保存 → {adapter_dir}")
 
     # 关闭 swanlab run（脚本结尾调用以确保上传完整）

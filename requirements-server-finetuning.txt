@@ -1,0 +1,33 @@
+# ---- 微调训练栈版本锁定（服务器侧，conda env: ickg） ----
+# 烟测在 2026-05-18 通过；为防止后续误升 / 重建环境拉到不兼容版本，
+# 这里把核心五件套钉到验证过的版本。
+# A100 80GB + 驱动 550.163.01 + CUDA 12.4 下验证通过。
+# 修改前请确认与 transformers / trl 的兼容矩阵：
+#   - torch < 2.5 会触发 transformers MoE custom_op schema 报错
+#   - trl < 0.16 不再支持新的 max_length 参数名
+#   - trl >= 0.16 的 assistant_only_loss 需要带 {% generation %} 的训练模板
+
+# Core deep learning stack
+torch==2.6.0          # cu124 wheel via https://download.pytorch.org/whl/cu124
+torchvision==0.21.0
+torchaudio==2.6.0
+transformers==5.8.1
+accelerate==1.13.0
+peft==0.19.1
+bitsandbytes==0.49.2
+trl==1.4.0
+
+# Tokenizer / dataset
+sentencepiece>=0.1.99
+tokenizers>=0.20
+datasets>=2.14.0
+
+# 监控
+tensorboard>=2.13.0
+swanlab>=0.7.0
+
+# 安装命令（首次或重建 ickg 环境时）：
+#   conda activate ickg
+#   pip install --upgrade pip
+#   pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 #       --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r requirements-server-finetuning.txt

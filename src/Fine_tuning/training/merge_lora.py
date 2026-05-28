@@ -153,7 +153,7 @@ def run_inference_test(
                 prompt_msgs,
                 tokenize=False,
                 add_generation_prompt=True,
-                enable_thinking=False,                       # Qwen3-style 模板支持；关闭 thinking
+                enable_thinking=False,                       # 兼容旧 Qwen3 模板；Baichuan-M2 官方模板用的是 thinking_mode，此处实际为 no-op，保留以便切换其它模板时复用
             )
         except TypeError:
             # 老模板不支持 enable_thinking 参数

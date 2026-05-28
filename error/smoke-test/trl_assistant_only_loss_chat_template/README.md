@@ -131,7 +131,14 @@ Baichuan-M2 没在 trl 的已知模板白名单里 → 报错。
 4. **`{% generation %}` 用字面形式**（不能写成 `{%- generation %}`），因为 trl 用的是字符串包含检测；外层 `-}}` 负责吃掉换行+缩进保证 byte-equal。
 5. **`<|im_end|>\n` 包在 `{% generation %}` 内**，让模型学会自己输出停止 token。
 
-对当前训练数据，简化模板与官方模板渲染结果**字节完全一致**（验证过 3 条真实样本）。
+对当前训练数据（system + user + assistant 三件套，assistant content 是 JSON triple 数组），简化模板与官方模板渲染结果**在 system/user/content 主体区段完全一致**，差异仅在最后一轮 assistant 的头部：官方模板会强制注入空思考壳 `<|im_start|>assistant
+<think>
+
+</think>
+
+[content]`，简化模板去掉该 14 字节壳子直接 `<|im_start|>assistant
+[content]`。这是有意取舍：让模型学到推理时（默认 add_generation_prompt=True 且 **不传 thinking_mode** 的情况下）prompt 收尾即 `<|im_start|>assistant
+`，直接 emit JSON 即可。完整影响分析见 [../烟测报错处理评估报告.md](../烟测报错处理评估报告.md) §3.3 / §3.4。
 
 ### 3.3 train_qlora.py 加载/还原逻辑
 

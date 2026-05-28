@@ -1,12 +1,14 @@
 # 服务器训练操作手册 — Baichuan-M2-32B QLoRA
 
-> 制定日期：2026-05-15
-> 目标硬件：1× A100 SXM4 80GB / 24 核 / 48 GB RAM / 300 GB SSD
-> 服务器：Ubuntu 22.04.1 LTS  •  IP `8.130.9.186`  •  端口 `25070`  •  用户 `root`  •  密码 `xxx`
+> 制定日期：2026-05-15  •  最近一次更新：2026-05-28
+> 目标硬件：1× A100-SXM4-80GB (driver 550.163.01 / CUDA 12.4) / 24 vCPU / 47 GB RAM
+> 系统盘：`/dev/vda1` 128 GB（已扩容，2026-05-28 状态：已用 80 G、可用 41 G）；数据盘 `/dev/vdb` 64 GB 未挂载（计划扩到 300 G 暂未执行）
+> 服务器：Ubuntu 22.04.1 LTS  •  IP `8.130.9.186`  •  端口 `25070`  •  用户 `root`  •  SSH 别名 `医学集群`
+> 当前 conda env：`ickg` (Python 3.10.20)  •  关键版本：torch 2.6.0+cu124 / transformers 5.8.1 / peft 0.19.1 / accelerate 1.13.0 / bitsandbytes 0.49.2 / trl 1.4.0 / flash-attn 2.6.3 / swanlab 0.7.18
 
 ---
 
-## 0. 总览（实测数据 2026-05-18 更新）
+## 0. 总览（实测数据 2026-05-18 更新，2026-05-28 增补服务器现状）
 
 | 阶段                         | 实测/预估耗时 | 备注                                                                |
 | ---------------------------- | ------------- | ------------------------------------------------------------------- |
@@ -119,6 +121,12 @@ curl -I https://github.com                   # 用于 git clone
 ---
 
 ## 3.5 磁盘扩容（当 `df -h /` 不足时）
+
+> **2026-05-28 服务器现状（实测）**：
+> - `/dev/vda1` 已扩到 **128 G**（系统盘根分区，已用 80 G、可用 41 G）—— 当前节点 §3.5.2 的 `growpart` + `resize2fs` 已完成，**无需重复执行**。
+> - `/dev/vdb` **64 G** 块设备，**未挂载**（用户决定暂时不动；该盘标记为 RO，需重新格式化才可写）。
+> - 厂商承诺把 vda 扩到 **300 G** 的方案 **尚未执行**；本周内训练（base 模型 63 G + adapter 250 MB + merged 65 G ≈ 130 G）刚好顶在 vda1 128 G 上沿，**先不下载 merged 到本地之前，注意监控 `df -h /`**。
+> - 若中途空间紧张，先按 §15.1 删 base 或 checkpoints 中间产物；非紧急情况下不要去动 vdb（避免误操作）。
 
 ### 3.5.1 典型现象与诊断
 
@@ -239,11 +247,13 @@ which python                                 # 应输出 /root/miniconda3/envs/i
 ```bash
 cd /root
 
-# 6.1 克隆项目（替换为你的实际 GitHub 仓库 URL；如果是私库需要 PAT）
-git clone https://github.com/<your_account>/ICKG.git
-# 私库 https + PAT：git clone https://<PAT>@github.com/<account>/ICKG.git
+# 6.1 克隆项目（公开仓库）
+git clone https://github.com/ThinkingUniverse/ICKG.git
+# 若为私库 + PAT：git clone https://<PAT>@github.com/ThinkingUniverse/ICKG.git
 
 cd ICKG
+git log --oneline -5                         # 确认拉到的是最新 main
+git status                                   # 应为 clean
 ls                                           # 应看到 src/ prompts/ data/ Plan/ 等
 
 # 6.2 核对训练数据已就位
@@ -255,36 +265,55 @@ ls -lh data/Fine_tuning_dataset/training_ready/v1/
 
 ## 7. 安装 Python 依赖
 
+> **⚠️ 版本锁定（2026-05-18 烟测后更新）**
+>
+> 本节早期版本写的是 torch 2.4.0+cu121 / transformers 4.45 / trl 0.16，在 2026-05-18 烟测时遇到三处报错：
+> 1. `torch._library.infer_schema` 不识别字符串形式注解 → 必须升 torch ≥ 2.5。
+> 2. SwanLab init 时 `cfg["sft"]["max_seq_length"]` KeyError → 已在脚本中加兼容回退。
+> 3. trl 0.16+ `assistant_only_loss` 模板不通过 → 已在 train_qlora.py 引入训练专用简化模板。
+>
+> 推荐用根目录下的 [`requirements-server-finetuning.txt`](../../requirements-server-finetuning.txt) 一次性安装：
+>
+> ```bash
+> conda activate ickg
+> pip install --upgrade pip
+> pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+>     --index-url https://download.pytorch.org/whl/cu124
+> pip install -r requirements-server-finetuning.txt
+> ```
+>
+> 下面 7.1–7.7 的命令保留了首次踩坑时的原始记录，**新环境请优先用上面的 requirements 文件**。
+
 ```bash
 # 7.1 配置 pip 国内镜像
 mkdir -p ~/.pip
 cat > ~/.pip/pip.conf <<'EOF'
 [global]
 index-url = https://pypi.tuna.tsinghua.edu.cn/simple
-extra-index-url = https://download.pytorch.org/whl/cu121
+extra-index-url = https://download.pytorch.org/whl/cu124
 EOF
 
 # 7.2 升级 pip
 pip install --upgrade pip
 
-# 7.3 安装 PyTorch 2.4.0 + CUDA 12.1（A100 完美兼容）
-pip install torch==2.4.0 --index-url https://download.pytorch.org/whl/cu121
+# 7.3 安装 PyTorch 2.6.0 + CUDA 12.4（与驱动 CUDA 12.4 对齐，A100 SM80 完美兼容）
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    --index-url https://download.pytorch.org/whl/cu124
 
 # 7.4 验证 torch + CUDA
 python -c "import torch; print('torch:', torch.__version__, 'cuda:', torch.cuda.is_available(), 'device:', torch.cuda.get_device_name(0))"
-# 应输出：torch: 2.4.0+cu121  cuda: True  device: NVIDIA A100-SXM4-80GB
+# 应输出：torch: 2.6.0+cu124  cuda: True  device: NVIDIA A100-SXM4-80GB
 ```
 
-> **关于"驱动 CUDA 12.4 / torch cu121 / flash-attn cu123" 三个版本不一致的问题**
+> **关于 CUDA 版本对齐（2026-05-28 现状）**
 >
-> 这是 **CUDA 的标准前向兼容机制**，不会有问题，原因：
+> 当前驱动 CUDA Version 12.4 / torch wheel cu124 / flash-attn 在 torch 2.6 + cu124 下重装通过。三者全部对齐到 12.4，不再需要前向兼容兜底。
 >
-> 1. **`nvidia-smi` 显示的 CUDA Version 是驱动支持的最高 CUDA Toolkit 版本**（12.4），不是实际运行版本。任何 `<= 12.4` 编译的 CUDA 程序都能在这个驱动上跑。
-> 2. **PyTorch cu121 wheel** 内置 CUDA 12.1 的运行时库（libcudart 等），不依赖系统 CUDA toolkit。装在 12.4 驱动上 → ✅ 兼容。
-> 3. **flash-attn cu123 wheel** 内置 CUDA 12.3 运行时库。装在 12.4 驱动上 → ✅ 兼容。
-> 4. **torch 与 flash-attn 之间的 ABI 兼容**：你装的是 `+cu123torch2.4cxx11abiFALSE` 这个 wheel，明确标了 torch 2.4 + cxx11abi=False，与上面装的 `torch==2.4.0+cu121`（默认也是 cxx11abi=False）完全匹配。
+> 1. **`nvidia-smi` 显示的 CUDA Version 是驱动支持的最高 CUDA Toolkit 版本**（12.4），torch cu124 wheel 内置 12.4 运行时，无冲突。
+> 2. **A100 (SM80)** 在 cu124 wheel 上一阶 / 二阶算子均完整支持。
+> 3. **flash-attn 2.6.3** 已在本环境（torch 2.6 / cu124 / cxx11abi=False / py3.10）下 import 通过；如换 torch / cuda 大版本需要重新编译或换 wheel。
 >
-> 简言之：**只要驱动 CUDA Version >= 各 wheel 内置的 CUDA 运行时版本，就稳**。你的栈是 driver 12.4 ≥ torch 12.1 ≥ flash-attn 12.3，全部满足，后期不会报错。
+> 历史背景（旧手册中的 torch 2.4 + cu121 + flash-attn cu123 三件套，已在 2026-05-18 烟测时被 §7 顶部的 ⚠️ 列出的三处报错驱动升级到当前版本）。
 >
 > 验证一下（可选）：
 >
@@ -298,43 +327,65 @@ python -c "import torch; print('torch:', torch.__version__, 'cuda:', torch.cuda.
 > ```
 
 ```bash
-# 7.5 安装核心训练栈
-# 注意：trl 必须 >= 0.16（用 SFTConfig.max_length 与 assistant_only_loss 两个新参数）
-pip install \
-  "transformers>=4.45.0" \
-  "peft>=0.13.0" \
-  "trl>=0.16.0" \
-  "accelerate>=0.34.0" \
-  "datasets>=2.21.0" \
-  "bitsandbytes>=0.43.3" \
-  "swanlab>=0.4.0" \
-  "tensorboard>=2.17.0" \
-  "pyyaml>=6.0" \
-  "scipy>=1.13.0" \
-  "sentencepiece>=0.2.0"
+# 7.5 安装核心训练栈（推荐：直接用 requirements-server-finetuning.txt，对应版本已在 2026-05-18 烟测验证）
+pip install -r requirements-server-finetuning.txt
 
-# 7.6 验证 bitsandbytes（最容易出问题的依赖）
+# 或者手动装（与 requirements 文件等价）：
+# pip install \
+#   "transformers==5.8.1" \
+#   "peft==0.19.1" \
+#   "trl==1.4.0" \
+#   "accelerate==1.13.0" \
+#   "bitsandbytes==0.49.2" \
+#   "datasets>=4.0" \
+#   "swanlab>=0.7.0" \
+#   "tensorboard>=2.17.0" \
+#   "pyyaml>=6.0" \
+#   "scipy>=1.13.0" \
+#   "sentencepiece>=0.2.0"
+
+# 7.6 验证关键依赖一并打印
+python -c "import torch, transformers, peft, accelerate, bitsandbytes, trl; \
+  print('torch:', torch.__version__, 'cuda:', torch.cuda.is_available()); \
+  print('transformers:', transformers.__version__); \
+  print('peft:', peft.__version__); \
+  print('accelerate:', accelerate.__version__); \
+  print('bitsandbytes:', bitsandbytes.__version__); \
+  print('trl:', trl.__version__)"
+# 期望输出（2026-05-28 实测）：
+#   torch: 2.6.0+cu124  cuda: True
+#   transformers: 5.8.1
+#   peft: 0.19.1
+#   accelerate: 1.13.0
+#   bitsandbytes: 0.49.2
+#   trl: 1.4.0
+
 python -m bitsandbytes
-# 应输出 "PyTorch installed: True" 和 "Library not detected: False"
+# 应看到 "PyTorch installed: True" 和 "Library not detected: False"
 ```
 
 ### 7.7 安装 Flash Attention 2（可选但强烈推荐）
 
-A100 + 长序列开启 FA2 可省 ~30% 显存、加速 1.5-2x。
+A100 + 长序列开启 FA2 可省 ~30% 显存、加速 1.5-2x。当前环境实测 flash-attn 2.6.3 与 torch 2.6.0+cu124 兼容。
 
 ```bash
-# 优先尝试预编译 wheel（最快）
+# 7.7.1 优先尝试 pip 直装（若仓库缓存了 torch 2.6 / cu124 的 wheel 则秒装；否则会源码编译，~10-20 min）
 pip install flash-attn==2.6.3 --no-build-isolation
 
-# 如果上面失败（说明在源码编译），改用下面这个明确的预编译 wheel 链接：
-# 适配 Python 3.10 / torch 2.4 / cu121 / 不要 abi3
-pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.6.3/flash_attn-2.6.3+cu123torch2.4cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+# 7.7.2 若编译超时，去 https://github.com/Dao-AILab/flash-attention/releases
+#       找对应 wheel：cp310 / linux_x86_64 / cxx11abiFALSE / 与本机 torch + cuda 大版本匹配
+#       例如可尝试（请按 release 页面实际命名替换）：
+# pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.6.3/flash_attn-2.6.3+cu124torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
 
-# 验证
-python -c "import flash_attn; print('flash-attn:', flash_attn.__version__)"
+# 7.7.3 验证（不只是 import 通过，还要确认 fwd kernel 可调用）
+python -c "import torch, flash_attn; \
+  from flash_attn import flash_attn_func; \
+  x = torch.randn(2, 4, 8, 16, dtype=torch.bfloat16, device='cuda'); \
+  print('flash-attn:', flash_attn.__version__, 'fwd OK, output shape:', flash_attn_func(x, x, x).shape)"
+# 预期：flash-attn: 2.6.3 fwd OK, output shape: torch.Size([2, 4, 8, 16])
 ```
 
-**如果 FA2 装不上**：编辑 `src/Fine_tuning/configs/train_config.yaml`，把 `attn_implementation: "flash_attention_2"` 改为 `attn_implementation: null`，模型走默认 SDPA / eager 注意力，性能略降但能跑。
+**如果 FA2 装不上**：编辑 `src/Fine_tuning/configs/train_config.yaml`，把 `attn_implementation: "flash_attention_2"` 改为 `attn_implementation: null`，模型走默认 SDPA / eager 注意力，性能略降但能跑（显存峰值会增加 ~10 GB，bsz 可能需要调小）。
 
 ---
 
@@ -440,22 +491,88 @@ rm -rf /root/ICKG/models/Baichuan-M2-32B-QLoRA-v1/checkpoints
 # 若 SwanLab 离线日志也想清，加：rm -rf /root/ICKG/swanlog
 ```
 
-烟测通过后启动正式训练。建议用 `tmux` 防止 SSH 断开导致训练中止。
+烟测通过后启动正式训练。**强烈建议用 `tmux` 防止 SSH 断开 / 网络抖动导致训练中止**——14 小时的训练任何中断都会前功尽弃。
+
+> **服务器现状（2026-05-28 实测）**：tmux 3.2a 已预装在 `/usr/bin/tmux`，无需另装。
+
+#### 11.1 tmux 使用速查（按出现频率排序）
 
 ```bash
-# 11.1 启动 tmux 会话
+# (a) 新建会话——名字叫 train（之后所有引用都用这个名字）
 tmux new -s train
 
-# 11.2 在 tmux 里启动训练
-cd /root/ICKG
-conda activate ickg
-python src/Fine_tuning/training/train_qlora.py \
-  --config src/Fine_tuning/configs/train_config.yaml \
-  2>&1 | tee log/Fine_tuning/train_$(date +%Y%m%d_%H%M%S).log
+# (b) 列出当前所有会话
+tmux ls
 
-# 11.3 detach（不停止训练）：按 Ctrl+B 再按 D
-# 11.4 重新连接：tmux attach -t train
-# 11.5 终止训练：tmux kill-session -t train
+# (c) 重新连接到指定会话（SSH 断了之后回来必用）
+tmux attach -t train
+
+# (d) 临时离开会话（训练继续）：在 tmux 内按 Ctrl+B，松开后再按 D
+#     此时回到外层 shell，但 tmux 里的训练进程仍在跑
+
+# (e) 彻底关闭会话（训练已结束 / 想强杀）
+tmux kill-session -t train
+```
+
+**tmux 内部快捷键**（前缀都是 `Ctrl+B`，先按下放开，再按下面的键）：
+
+| 操作 | 快捷键 | 说明 |
+|---|---|---|
+| Detach（离开但保留会话） | `Ctrl+B` `D` | 训练继续在后台跑，SSH 可以安全断开 |
+| 滚屏 / 复制模式 | `Ctrl+B` `[` | 进入后用方向键 / `PgUp` `PgDn` 看历史；按 `q` 退出 |
+| 横向分屏 | `Ctrl+B` `"` | 上下分两个 pane（例如上 pane 跑训练、下 pane 跑 `nvidia-smi`） |
+| 纵向分屏 | `Ctrl+B` `%` | 左右分两个 pane |
+| 在 pane 之间切换 | `Ctrl+B` `方向键` | 在分出的 pane 之间跳 |
+| 关闭当前 pane | `Ctrl+B` `x` | 然后按 `y` 确认 |
+| 新建窗口 | `Ctrl+B` `c` | 一个会话里可有多个 window |
+| 切换窗口 | `Ctrl+B` `n` / `p` | next / prev |
+| 列出窗口 | `Ctrl+B` `w` | 用方向键选 |
+| 重命名窗口 | `Ctrl+B` `,` | 输入新名字 |
+
+> **可选：启用鼠标滚轮**（一次性设置，之后所有会话都生效）
+>
+> ```bash
+> cat > ~/.tmux.conf <<'EOF'
+> set -g mouse on
+> set -g history-limit 50000
+> EOF
+> tmux source-file ~/.tmux.conf   # 已在会话内时执行；新会话自动生效
+> ```
+
+#### 11.2 启动训练（tmux 内）
+
+```bash
+# (1) 在本地终端先连服务器
+ssh 医学集群
+
+# (2) 新建 tmux 会话
+tmux new -s train
+
+# (3) 在会话内启动训练（一行命令做 4 件事：cd → activate env → 启动训练 → 同时 tee 到带时间戳的日志）
+cd /root/ICKG && conda activate ickg && \
+  mkdir -p log/Fine_tuning && \
+  python src/Fine_tuning/training/train_qlora.py \
+    --config src/Fine_tuning/configs/train_config.yaml \
+    2>&1 | tee log/Fine_tuning/train_$(date +%Y%m%d_%H%M%S).log
+
+# (4) 按 Ctrl+B D 离开会话（训练继续），可以安全断开 SSH
+#     回来时：ssh 医学集群 → tmux attach -t train
+
+# (5) 训练中途想看 GPU，先 Ctrl+B " 横向分屏，下 pane 执行：
+watch -n 2 nvidia-smi
+```
+
+#### 11.3 训练异常排查（在 tmux 外也能查）
+
+```bash
+# 看最新一条训练日志
+ls -1t /root/ICKG/log/Fine_tuning/train_*.log | head -1 | xargs tail -100
+
+# 看 tmux 里训练进程是否还活着（看 GPU 占用 + 进程号）
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
+
+# 万一 tmux 内训练崩了想看完整 stderr：
+tmux attach -t train      # 重新进会话，往上滚 (Ctrl+B [) 看堆栈
 ```
 
 **实测耗时**（基于 2026-05-18 烟测推算，61s/step）：
@@ -556,6 +673,30 @@ python src/Fine_tuning/training/merge_lora.py \
   --test-after-merge 10
 ```
 
+### 13.4 推理 prompt 对齐校验（vLLM 部署前必跑）⭐
+
+> 背景：本项目训练时启用了 `sft.assistant_only_loss: true`，trl 0.16+ 拒绝官方 Baichuan-M2 模板，所以训练期临时切换到了简化模板（去掉空 `<think>\n\n</think>\n\n` 壳）。保存时已还原成官方模板，但**只有在调用 `apply_chat_template` 时不传 `thinking_mode` 才能匹配训练分布**。详见 [error/smoke-test/烟测报错处理评估报告.md](../../error/smoke-test/烟测报错处理评估报告.md) §3。
+
+```bash
+# 13.4.1 校验 adapter 目录的 tokenizer 推理 prompt 末尾与训练分布对齐
+python src/Fine_tuning/tools/verify_adapter_inference_alignment.py \
+  --adapter-dir models/Baichuan-M2-32B-QLoRA-v1/adapter \
+  --sample-jsonl data/Fine_tuning_dataset/training_ready/v1/val.jsonl \
+  --strict-thinking-mode-check
+
+# 期望输出：
+# [OK] 默认调用 prompt 末尾为 "<|im_start|>assistant\n"，与训练分布对齐。
+# [OK] 真实样本 prompt 末尾同样对齐（取自 val.jsonl）。
+# [完成] adapter tokenizer 与训练分布在 prompt 边界处对齐校验通过。
+```
+
+**vLLM 部署硬规则**：
+
+- ❌ 不要在 vLLM 启动参数或客户端调用里传 `chat_template_kwargs={"thinking_mode": ...}`。
+- ❌ 不要传 `enable_thinking` 之外的任何 thinking 相关参数（`enable_thinking=False` 在 Baichuan-M2 模板里恰好是 no-op，安全）。
+- ✅ 让 jinja 走默认分支，prompt 收尾就是 `<|im_start|>assistant\n`，与训练完全对齐。
+- ✅ 如果业务方要求"明确禁用思考"，请在 system prompt 里用自然语言说明，**不要**通过模板参数注入。
+
 ---
 
 ## 14. 下载结果到本地
@@ -630,22 +771,23 @@ source /root/miniconda3/etc/profile.d/conda.sh
 # Env
 conda env list | grep -q ickg || conda create -n ickg python=3.10 -y
 conda activate ickg
-# Pip mirror
+# Pip mirror（与当前 torch wheel 对齐到 cu124）
 mkdir -p ~/.pip && cat > ~/.pip/pip.conf <<EOL
 [global]
 index-url = https://pypi.tuna.tsinghua.edu.cn/simple
-extra-index-url = https://download.pytorch.org/whl/cu121
+extra-index-url = https://download.pytorch.org/whl/cu124
 EOL
-# Deps
+# Deps（与 2026-05-18 烟测验证版本一致）
 pip install --upgrade pip
-pip install torch==2.4.0 --index-url https://download.pytorch.org/whl/cu121
-pip install "transformers>=4.45.0" "peft>=0.13.0" "trl>=0.16.0" "accelerate>=0.34.0" \
-            "datasets>=2.21.0" "bitsandbytes>=0.43.3" "swanlab>=0.4.0" \
-            "tensorboard>=2.17.0" "pyyaml>=6.0" "scipy>=1.13.0" "sentencepiece>=0.2.0"
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    --index-url https://download.pytorch.org/whl/cu124
+cd /root/ICKG && pip install -r requirements-server-finetuning.txt
 echo "[完成] 基础环境已就绪。后续执行 flash-attn 安装、swanlab login、模型下载、训练。"
 EOF
 chmod +x /root/setup_server.sh
 ```
+
+> 该脚本依赖仓库根目录的 `requirements-server-finetuning.txt`，所以要 **先 `git clone` 完仓库**（§6）再跑此脚本，或者跑前先 `cd /root && git clone https://github.com/ThinkingUniverse/ICKG.git`。
 
 ---
 
