@@ -32,6 +32,10 @@ models/
 __pycache__/
 *.pyc
 # 汇报
-presentation/
+presentation/fine-tuning
+presentation/application/note.txt
+presentation/application/paper
 # mcp
 .mcp.json
+# codegraph 本地索引（每台机器各自生成，不入库）
+.codegraph/
