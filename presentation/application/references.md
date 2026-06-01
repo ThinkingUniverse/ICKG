@@ -5,7 +5,7 @@ ICKG Application Blueprint — Unified References
 
 # 参考文献统一列表
 
-> 共收录 **30 篇**核心文献，按 5 大主题 + 项目核心论文分组。每篇仅附一个最权威的可点击链接（优先 DOI，次之 PMID/arXiv）。⭐ 标记为 **must-read** 必读文献（共 11 篇）。
+> 共收录 **34 篇**核心文献，按 8 大主题 + 项目核心论文分组。每篇仅附一个最权威的可点击链接（优先 DOI，次之 PMID/arXiv）。⭐ 标记为 **must-read** 必读文献（共 16 篇）。
 
 ---
 
@@ -41,43 +41,64 @@ ICKG Application Blueprint — Unified References
 
 ---
 
-## 主题 4 · 知识图谱用于药物发现与重定位（场景 3.1）
+## 主题 4 · 知识图谱链接预测与新知识发现（场景 1.4）
 
-18. ⭐⭐ [Richardson-2023] [**Janus kinase inhibitors are potential therapeutics for ALS**](https://doi.org/10.1186/s40035-023-00380-y). *Transl Neurodegener*. 基于 KG 推理重定位免疫相关 JAK 抑制剂用于 ALS，"KG→临床候选药"被前瞻性验证的代表案例。
-19. [Su-2023] [**Biomedical discovery through the integrative biomedical knowledge hub (iBKH)**](https://doi.org/10.1016/j.isci.2023.106460). *iScience*. 大型综合 KG，已用于自身免疫疾病药物重定位。
-20. [Liu-2024] [**A probabilistic knowledge graph for target identification**](https://doi.org/10.1371/journal.pcbi.1011945). *PLOS Comput Biol*. 在 KG 上做概率推理识别免疫与肿瘤新靶点。
-21. [Zhou-2024] [**TarKG: a comprehensive biomedical knowledge graph for target discovery**](https://doi.org/10.1093/bioinformatics/btae598). *Bioinformatics*. 面向靶点发现的大规模 KG。
-22. ⭐ [Koutsandreas-2025] [**Network-Based Approaches for Drug Target Identification**](https://doi.org/10.1146/annurev-biodatasci-101424-120950). *Annu Rev Biomed Data Sci*. 综述，系统梳理 KG/网络方法在靶点发现与重定位中的位置。
-23. [Caufield-2023] [**KG-Hub: building and exchanging biological knowledge graphs**](https://doi.org/10.1093/bioinformatics/btad418). *Bioinformatics*. 可复用 KG 构建工具链与共享方案。
+18. [Liu-2024] [**A probabilistic knowledge graph for target identification**](https://doi.org/10.1371/journal.pcbi.1011945). *PLOS Comput Biol*. 在 KG 上做概率推理识别免疫与肿瘤新靶点/新关联，链接预测的可迁移范式。
+19. [Caufield-2023] [**KG-Hub: building and exchanging biological knowledge graphs**](https://doi.org/10.1093/bioinformatics/btad418). *Bioinformatics*. 可复用 KG 构建工具链与共享方案，覆盖 KG 构建-训练-发布全链路。
 
 ---
 
-## 主题 5 · KG-RAG 在医学问答与健康报告解读中的应用（旗舰场景 3.2、1.2、2.2）
+## 主题 5 · KG-RAG 在医学问答与健康报告解读中的应用（旗舰场景 3.1、1.2、2.2）
 
-24. ⭐⭐ [Soman-2024] [**Biomedical knowledge graph-optimized prompt generation for large language models (KG-RAG with SPOKE)**](https://doi.org/10.1093/bioinformatics/btae560). *Bioinformatics*. 经典 KG-RAG 框架，KG-RAG 范式的奠基性工程。
-25. ⭐⭐ [Liu-2025-JAMIA] [**Detecting emergencies in patient portal messages using LLMs and KG-based RAG**](https://doi.org/10.1093/jamia/ocaf059). *JAMIA*. 真实部署的 KG-RAG 提升临床消息分诊安全性，旗舰场景 3.2 的最强参考。
-26. ⭐ [Hu-2025] [**A self-correcting Agentic Graph RAG for clinical decision support in hepatology**](https://doi.org/10.3389/fmed.2025.1716327). *Front Med*. 专科 KG-RAG + Agent 自校正最新样板。
-27. [Su-2024-KGARevion] [**Knowledge Graph Based Agent for Complex, Knowledge-Intensive QA in Medicine (KGARevion)**](https://arxiv.org/abs/2410.04660). *arXiv*. Zitnik 团队的医学 KG-Agent，针对复杂、多跳医学问答显著优于普通 RAG。
-28. [Kim-2026] [**MedSumGraph: enhancing GraphRAG for medical QA with summarization and optimized prompts**](https://doi.org/10.1016/j.artmed.2025.103311). *Artif Intell Med*. 针对医学问答优化的 GraphRAG 子图摘要与提示构造。
-29. ⭐ [Gao-2025-Dx] [**Leveraging Medical Knowledge Graphs Into Large Language Models for Diagnosis Prediction**](https://doi.org/10.2196/58670). *JMIR AI*. KG-augmented LLM 在诊断辅助的方法学比较，本蓝图 2.2/3.2 的直接参考。
+20. ⭐⭐ [Soman-2024] [**Biomedical knowledge graph-optimized prompt generation for large language models (KG-RAG with SPOKE)**](https://doi.org/10.1093/bioinformatics/btae560). *Bioinformatics*. 经典 KG-RAG 框架，KG-RAG 范式的奠基性工程。
+21. ⭐⭐ [Liu-2025-JAMIA] [**Detecting emergencies in patient portal messages using LLMs and KG-based RAG**](https://doi.org/10.1093/jamia/ocaf059). *JAMIA*. 真实部署的 KG-RAG 提升临床消息分诊安全性，旗舰场景 3.1 的最强参考。
+22. ⭐ [Hu-2025] [**A self-correcting Agentic Graph RAG for clinical decision support in hepatology**](https://doi.org/10.3389/fmed.2025.1716327). *Front Med*. 专科 KG-RAG + Agent 自校正最新样板。
+23. [Su-2024-KGARevion] [**Knowledge Graph Based Agent for Complex, Knowledge-Intensive QA in Medicine (KGARevion)**](https://arxiv.org/abs/2410.04660). *arXiv*. Zitnik 团队的医学 KG-Agent，针对复杂、多跳医学问答显著优于普通 RAG。
+24. [Kim-2026] [**MedSumGraph: enhancing GraphRAG for medical QA with summarization and optimized prompts**](https://doi.org/10.1016/j.artmed.2025.103311). *Artif Intell Med*. 针对医学问答优化的 GraphRAG 子图摘要与提示构造。
+25. ⭐ [Gao-2025-Dx] [**Leveraging Medical Knowledge Graphs Into Large Language Models for Diagnosis Prediction**](https://doi.org/10.2196/58670). *JMIR AI*. KG-augmented LLM 在诊断辅助的方法学比较，本蓝图 2.2/3.1 的直接参考。
+
+---
+
+## 主题 6 · ICKG 差异化定位：对比对象与 KG×LLM 结合（定位 0.1–0.3）
+
+26. ⭐⭐ [He-2026] [**AI-powered Immune Cell Knowledge Graph (ICKG) with granular immune contexts enables immune program interpretation**](https://doi.org/10.1038/s44387-025-00060-4). *npj Artif Intell*. **同名已发表 ICKG**（4 个细胞类型专用子图、仅 activation/inhibition 两类关系、基因集注释导向），本项目差异化定位的最直接对照与互补对象。
+27. [Li-2026] [**A unified knowledge graph linking foodomics to chemical-disease networks and flavor profiles (FoodAtlas)**](https://doi.org/10.1038/s41538-025-00680-9). *npj Sci Food*. "LLM 抽取 + 逐边可溯源（provenance-tracked edges）"的跨域统一 KG 范式参照。
+28. ⭐ [Peng-2024] [**Graph Retrieval-Augmented Generation: A Survey**](https://doi.org/10.1145/3777378). *ACM Trans Inf Syst*. GraphRAG 范式（图索引/图引导检索/图增强生成）系统综述，论证 KG 如何缓解 LLM 幻觉、时效与领域知识缺失。
+29. [KG-Quality-2025] [**Improving Biomedical Knowledge Graph Quality: A Community Approach**](https://arxiv.org/abs/2508.21774). *arXiv*. KG 可信度社区评估标准（provenance、版本、更新频率、证据质量），证据可靠性框架的设计依据。
+
+---
+
+## 主题 7 · 证据可靠性分级（旗舰场景 3.1 深化）
+
+30. ⭐⭐ [Guyatt-2008] [**GRADE: an emerging consensus on rating quality of evidence and strength of recommendations**](https://doi.org/10.1136/bmj.39489.470347.AD). *BMJ*. 临床证据分级金标准（高/中/低/极低四级），3.1 多维证据可靠性 A/B/C/D 分级的对齐基准。
+31. [Schäfer-2024] [**BioKGrapher: Initial evaluation of automated knowledge graph construction from biomedical literature**](https://doi.org/10.1016/j.csbj.2024.10.017). *Comput Struct Biotechnol J*. 明确建议用文献计量学（研究阶段、证据等级、发表时效）对齐临床指南，证据维度设计的直接依据。
+
+---
+
+## 主题 8 · 免疫健康管理：免疫韧性与纵向追踪（场景 3.2/3.3/3.4）
+
+32. ⭐⭐ [Ahuja-2023] [**Immune resilience despite inflammatory stress promotes longevity and favorable health outcomes including resistance to infection**](https://doi.org/10.1038/s41467-023-38238-6). *Nat Commun*. 提出可量化的免疫韧性（IR）指标，并证明其作为"免疫健康生物标志物"的价值。
+33. ⭐ [Manoharan-2025] [**The 15-Year Survival Advantage: Immune Resilience as a Salutogenic Force in Healthy Aging**](https://doi.org/10.1111/acel.70063). *Aging Cell*. 以 TCF7 为核心的 IR 对抗炎性衰老/免疫衰老/细胞衰老，增强疫苗应答，中年是干预关键窗口。
 
 ---
 
 ## 项目相关核心论文
 
-30. ⭐ [Zhou-2026-LCKG] [**Fine-tuned large language models with structured prompts enable efficient construction of lung cancer knowledge graphs**](https://doi.org/10.1038/s41746-025-02232-y). *npj Digit Med*. 本 ICKG 项目所参考的核心方法学论文，LCKG 范式的奠基。
+34. ⭐ [Zhou-2026-LCKG] [**Fine-tuned large language models with structured prompts enable efficient construction of lung cancer knowledge graphs**](https://doi.org/10.1038/s41746-025-02232-y). *npj Digit Med*. 本 ICKG 项目所参考的核心方法学论文，LCKG 范式的奠基。
 
 ---
 
-## "先读 5 篇"推荐阅读顺序
+## "先读 7 篇"推荐阅读顺序
 
 | 顺序 | 文献 | 为什么先读 |
 |---|---|---|
-| 1 | [Gao-2025 MDKG](https://doi.org/10.1038/s41467-025-62781-z) | 完整看一遍 KG+临床预测范式 |
-| 2 | [Zhou-2026 LCKG](https://doi.org/10.1038/s41746-025-02232-y) | 看 ICKG 自身工程范式 |
-| 3 | [Zhao-2023 KG-GNN ICI](https://doi.org/10.1093/bib/bbad023) | 旗舰场景 2.3 的方法母本 |
-| 4 | [Soman-2024 SPOKE-KG-RAG](https://doi.org/10.1093/bioinformatics/btae560) | KG-RAG 必备背景 |
-| 5 | [Chandak-2023 PrimeKG](https://doi.org/10.1038/s41597-023-01960-3) | 看精准医学 KG 工业级数据底座 |
+| 1 | [He-2026 ICKG](https://doi.org/10.1038/s44387-025-00060-4) | 看清同名工作边界，理解本项目差异化定位 |
+| 2 | [Gao-2025 MDKG](https://doi.org/10.1038/s41467-025-62781-z) | 完整看一遍 KG+临床预测范式 |
+| 3 | [Zhou-2026 LCKG](https://doi.org/10.1038/s41746-025-02232-y) | 看 ICKG 自身工程范式 |
+| 4 | [Zhao-2023 KG-GNN ICI](https://doi.org/10.1093/bib/bbad023) | 旗舰场景 2.3 的方法母本 |
+| 5 | [Soman-2024 SPOKE-KG-RAG](https://doi.org/10.1093/bioinformatics/btae560) | KG-RAG 必备背景 |
+| 6 | [Chandak-2023 PrimeKG](https://doi.org/10.1038/s41597-023-01960-3) | 看精准医学 KG 工业级数据底座 |
+| 7 | [Guyatt-2008 GRADE](https://doi.org/10.1136/bmj.39489.470347.AD) | 旗舰场景 3.1 证据分级的基准 |
 
 ---
 

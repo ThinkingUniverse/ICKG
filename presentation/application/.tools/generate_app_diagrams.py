@@ -197,11 +197,11 @@ def build(sc):
     }
 
 
-# ===================== 10 个应用场景数据 =====================
+# ===================== 12 个应用场景数据 =====================
 SCENARIOS = [
     {
         "path": "01_knowledge_applications/1.1_retrieval_and_qa",
-        "title": "ICKG 知识检索与图谱问答",
+        "title": "ICKG 精准检索与即时问答",
         "subtitle": "自然语言/Cypher  →  Neo4j 图查询  →  排序结果 + PMID 回链",
         "input_items": [
             "自然语言查询\n\"与 CD8+ T 相关的疾病\"",
@@ -226,7 +226,7 @@ SCENARIOS = [
     },
     {
         "path": "01_knowledge_applications/1.2_kg_rag",
-        "title": "ICKG KG-RAG 增强问答",
+        "title": "ICKG 防幻觉免疫问答助手",
         "subtitle": "用户问题  →  子图抽取 + 提示构造  →  LLM 受控生成 + 引用",
         "input_items": [
             "用户问题\n\"PD-L1 如何抑制\nCD8+ T 细胞功能？\"",
@@ -247,7 +247,7 @@ SCENARIOS = [
     },
     {
         "path": "01_knowledge_applications/1.3_causal_discovery",
-        "title": "ICKG 因果发现与多跳推理",
+        "title": "ICKG 因果链解析与假说生成",
         "subtitle": "起止节点  →  有向路径搜索 + 打分  →  因果链 + 自然语言叙事",
         "input_items": [
             "起点节点\nIL-6  (cytokine)",
@@ -273,7 +273,7 @@ SCENARIOS = [
     },
     {
         "path": "01_knowledge_applications/1.4_new_knowledge_generation",
-        "title": "ICKG 链接预测与新知识生成",
+        "title": "ICKG 未知关联预测与科研选题",
         "subtitle": "(head, relation, ?)  →  KGE 模型打分  →  Top-K 新候选 + 验证",
         "input_items": [
             "头实体 head\nPD-1+ TIM-3+ CD8 T",
@@ -397,56 +397,94 @@ SCENARIOS = [
                  "· Gao et al., Nature Communications, 2025"),
     },
     {
-        "path": "03_other_applications/3.1_drug_repurposing",
-        "title": "ICKG 药物发现与重定位",
-        "subtitle": "目标疾病  →  KG 路径推理 + KGE 链接预测  →  Top-K 候选药物",
+        "path": "03_other_applications/3.1_health_report_interpretation",
+        "title": "ICKG 健康/免疫报告解读",
+        "subtitle": "报告异常项  →  实体链接 + 多维证据分级  →  解读 + 证据卡片(A/B/C/D)",
         "input_items": [
-            "目标疾病\nSLE\n(系统性红斑狼疮)",
-            "候选池 + 链接\nDrugBank / ChEMBL\n约 3000 上市药",
-            "约束\nNOT TREATMENT_FOR\n(排除已知)",
+            "免疫指标\nCD4/CD8=0.8 ↓\nIL-6=24.3 ↑",
+            "自身抗体\nanti-dsDNA 145 ↑",
+            "解读模式\npatient / doctor",
         ],
         "process_steps": [
-            "Step 1\n构造 drug→target→cell→disease",
-            "Step 2\n路径打分 + KGE 排序",
-            "Step 3\n过滤已知 + Top-K 输出",
+            "Step 1\n字段抽取 + 实体链接 ICKG",
+            "Step 2\n多维证据分级 → A/B/C/D",
+            "Step 3\nKG-RAG 受控生成 + 引用",
         ],
-        "output": ("Top-5 重定位候选：\n\n"
-                   "1. Baricitinib (RA)\n   JAK→IFN-α→pDC ★\n\n"
-                   "2. Belimumab\n   已批准 (校验)\n\n"
-                   "3. Anifrolumab\n   已批准 (校验)\n\n"
-                   "4. Tofacitinib (RA)\n\n"
-                   "5. Daratumumab\n   ✦ 新假设"),
-        "refs": ("· Richardson et al., Translational Neurodegeneration, 2023\n"
-                 "· Liu et al., PLOS Computational Biology, 2024\n"
-                 "· Koutsandreas et al., Annual Review of Biomedical Data Science, 2025"),
+        "output": ("个体化解读 (节选)：\n\n"
+                   "IL-6↑ + 抗dsDNA+\n↔ SLE 活动期\n证据等级 A ⭐⭐⭐\n"
+                   "(37 篇 PMID, 含队列)\n\n"
+                   "建议：风湿免疫科\n补 SLEDAI / C3C4\n\n"
+                   "🔴 强免责: 非诊断"),
+        "refs": ("· Guyatt et al., BMJ (GRADE), 2008\n"
+                 "· Liu et al., JAMIA (KG-RAG triage), 2025\n"
+                 "· Schäfer et al., Comput Struct Biotechnol J (BioKGrapher), 2024"),
     },
     {
-        "path": "03_other_applications/3.3_education_and_research",
-        "title": "ICKG 教育、患教与科研协作",
-        "subtitle": "问题 / 主题  →  分流 + KG 查询  →  科普 / 研究空白 / 综述大纲",
+        "path": "03_other_applications/3.2_immune_resilience_profiling",
+        "title": "ICKG 免疫韧性画像与纵向追踪",
+        "subtitle": "多次体检免疫指标  →  IR 计算 + ICKG 解释  →  免疫年龄画像 + 趋势预警",
         "input_items": [
-            "A. 患教问题\n\"IgG4 升高是什么？\"",
-            "B. 研究探索\n白点分析\n(Treg, 2-hop)",
-            "C. 综述主题\n\"CAR-T 实体瘤障碍\"",
+            "纵向免疫指标\nCD4/CD8, IL-6, CRP\n(3 次体检)",
+            "人群常模\n按年龄/性别分位",
+            "IR 权重\n(可配置)",
         ],
         "process_steps": [
-            "Step 1\n问题分流 + 模式匹配",
-            "Step 2\nICKG 子图 / 社区检测",
-            "Step 3\nLLM 包装为对应输出",
+            "Step 1\nIR 计算 (免疫力-炎症平衡)",
+            "Step 2\n对照常模 + 免疫年龄分位",
+            "Step 3\nICKG 解释趋势 + 建议",
         ],
-        "output": ("三类输出：\n\n"
-                   "A. 患教 → 200 字科普\n   + 强制转诊提示\n\n"
-                   "B. 白点列表（节选）\n"
-                   "   · 子宫内膜异位症\n"
-                   "   · COPD\n"
-                   "   · 自闭症谱系\n\n"
-                   "C. 综述大纲\n"
-                   "   1. 引言\n"
-                   "   2. 抗原与毒性\n"
-                   "   3. TME 抑制网络\n   …"),
-        "refs": ("· Zhou et al., npj Digital Medicine (LCKG), 2026\n"
-                 "· Cui et al., Nature (Immune Dictionary), 2024\n"
-                 "· Caufield et al., Bioinformatics (KG-Hub), 2023"),
+        "output": ("免疫韧性画像：\n\n"
+                   "IR 分位 = 第 38%\n较 1 年前 52% ↓\n\n"
+                   "驱动：IL-6 连升\nCD4/CD8 1.6→1.1\n\n"
+                   "ICKG: 与炎性衰老\n相关 [PMID]\n\n"
+                   "中年 = 干预窗口"),
+        "refs": ("· Ahuja et al., Nature Communications, 2023\n"
+                 "· Manoharan et al., Aging Cell, 2025\n"
+                 "· Cui et al., Nature (Immune Dictionary), 2024"),
+    },
+    {
+        "path": "03_other_applications/3.3_personalized_vaccination",
+        "title": "ICKG 个性化疫苗与免疫提升",
+        "subtitle": "个体免疫画像  →  ICKG 检索 + 证据筛选  →  疫苗/生活方式参考(强免责)",
+        "input_items": [
+            "免疫画像\nIR 偏低, 年龄>60",
+            "基础病\n(如有)",
+            "证据门槛\n≥ B 级",
+        ],
+        "process_steps": [
+            "Step 1\n高危信号 + 年龄检索 ICKG",
+            "Step 2\n仅保留 ≥B 级证据",
+            "Step 3\nKG-RAG 生成科普参考",
+        ],
+        "output": ("个性化参考 (科普)：\n\n"
+                   "流感/肺炎球菌疫苗\n获益证据较强 (B)\n[PMID] → 遵医嘱\n\n"
+                   "IL-6↑ → 改善睡眠/\n有氧/代谢\n(IR 可逆)\n\n"
+                   "⚠ 非处方, 遵疾控"),
+        "refs": ("· Manoharan et al., Aging Cell, 2025\n"
+                 "· Ahuja et al., Nature Communications, 2023\n"
+                 "· Cui et al., Nature (Immune Dictionary), 2024"),
+    },
+    {
+        "path": "03_other_applications/3.4_chronic_subhealth_monitoring",
+        "title": "ICKG 慢病/亚健康免疫风险追踪",
+        "subtitle": "纵向指标 + 基础病  →  风险评分 + 红黄绿灯  →  风险时间线 + 预警",
+        "input_items": [
+            "纵向免疫指标\nNLR, CRP 时间线",
+            "基础病\n2 型糖尿病",
+            "预警阈值\n≥ 黄灯",
+        ],
+        "process_steps": [
+            "Step 1\n趋势 + ICKG 机制先验",
+            "Step 2\n风险评分 + 红黄绿灯",
+            "Step 3\nICKG 解释 + 证据分级",
+        ],
+        "output": ("免疫风险时间线：\n\n"
+                   "🟡 黄灯\nNLR 持续上行\nCRP 轻度升高\n\n"
+                   "ICKG: 慢性炎症与\n糖尿病免疫并发\n相关 (B 级)\n\n"
+                   "建议 3 月复查"),
+        "refs": ("· Gao et al., Nature Communications, 2025\n"
+                 "· Ahuja et al., Nature Communications, 2023\n"
+                 "· Rjoob et al., Nature Cardiovascular Research, 2026"),
     },
 ]
 
@@ -457,7 +495,7 @@ def main():
     p.add_argument("--output-root", "-o", type=Path, required=True,
                    help="输出根目录（通常为 report/application）")
     p.add_argument("--scenarios", "-s", nargs="*", default=None,
-                   help="只生成指定 path 的场景；不指定则生成全部 10 个")
+                   help="只生成指定 path 的场景；不指定则生成全部 12 个")
     args = p.parse_args()
 
     targets = (SCENARIOS if not args.scenarios
