@@ -9,3 +9,4 @@
 - 2026-05-28 服务器增补：vda1 扩到 128G；env ickg 版本锁定；评估报告完成，给出开训前 checklist
 - 2026-06-01 用 planning-with-files 建立 .planning/baichuan-qlora/ 状态层（三件套），链接现有文档
 - （下一条）待：完成开训前 checklist → tmux 启动 3 epoch 训练
+- 2026-06-02 07:27 tmux 会话 `train` 内启动正式 3 epoch 训练（launcher: log/Fine_tuning/run_train.sh，日志 log/Fine_tuning/train_20260602_072736.log）。开训前 checklist 全过：模型63G / 数据4500·250·250 / flash-attn2.6.3 / SwanLab已登录cloud / 磁盘40G可用 / 无烟测残留。已确认进入训练循环：总步数 846，GPU 78.8G·100%，首步 81s/it（含预热，稳态预计回落）。下一步：监控 SwanLab loss 曲线，训练结束后进入 Phase 7 合并 LoRA。
