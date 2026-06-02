@@ -39,3 +39,5 @@ presentation/application/paper
 .mcp.json
 # codegraph 本地索引（每台机器各自生成，不入库）
 .codegraph/
+# 参考库repositories
+reference_repositories
