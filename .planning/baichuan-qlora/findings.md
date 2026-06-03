@@ -22,3 +22,10 @@
 
 ## 范围外（本期不做）
 推理脚本（训练后单聊）、DeepSpeed/多卡/FSDP、全参微调、RL/DPO
+
+## 正式训练实测（2026-06-03）
+- **稳态步时 ~76–80 s/it，比手册烟测估算的 61 s/step 慢约 30%**：18.8h/¥131 vs 手册 14.3h/¥100。原因推断：61s 取自前 20 步烟测、且早于最终 bsz2+grad_accum8+max_length5120 配置定稿，满序列 fwd+bwd 更重。→ 后续估时直接用 ~78 s/it。
+- **eval 单次 ~6.2 min（374s，250 样本/eval_bsz2/125 batch）**，eval_steps=200 全程 4 次 + epoch 末 1 次，开销总计 ~25–30 min，量级可控。
+- **eval_loss 单调小幅下降到 0.0745 平台、eval≈train**：r16/lr1e-4/3epoch 对该任务无明显过拟合，3 epoch 充分；若赶时间 2 epoch 也基本到位。
+- **SwanLab cloud 训练全程间歇 network error 但自动续传**，本地 TensorBoard + swanlog 离线缓存兜底，不影响权重与最终结果。
+- **磁盘是 Phase 7 硬约束**：merged bf16 ≈65G 为额外新增，基座 63G 为合并输入不可删；128G 根盘（训练后可用仅 38G）放不下，须先扩容到可用 ~100G。

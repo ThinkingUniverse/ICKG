@@ -24,8 +24,11 @@ scripts/Triple_extraction/Exhaust.txt
 CLAUDE.local.md
 .claude/
 Training_example/
-# 服务器训练产物（base model / checkpoints / merged）不入库
-models/
+# 服务器训练产物（base model / checkpoints / merged，62G+）不入库；但放行 inference_test（人工查看结果，体积小）
+/models/*
+!/models/Baichuan-M2-32B-QLoRA-v1/
+/models/Baichuan-M2-32B-QLoRA-v1/*
+!/models/Baichuan-M2-32B-QLoRA-v1/inference_test/
 # 训练日志（TensorBoard / SwanLab 离线缓存）不入库
 # log/
 # Python 缓存
