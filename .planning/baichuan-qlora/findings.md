@@ -20,8 +20,14 @@
    - ⚠️ 训练-推理对齐依赖隐式约定：推理/vLLM **不传 thinking_mode**，否则喂入训练没见过的 `<think>` 前缀
    - 详见 [评估报告 §3](../../error/smoke-test/烟测报错处理评估报告.md)；「字节完全一致」表述需订正
 
-## 范围外（本期不做）
-推理脚本（训练后单聊）、DeepSpeed/多卡/FSDP、全参微调、RL/DPO
+## 范围外（训练期不做，Phase 10 已转入）
+DeepSpeed/多卡/FSDP、全参微调、RL/DPO（仍不做）
+
+## Phase 10 推理盘点（2026-06-03 本地实测）
+- 全量 752,078 篇 − 已提取 67,925（First 40,256 + Second 27,987，零交集）= **剩余 684,153 篇**
+- 全量 PMID 无重复、摘要无空；输入 = Title+Abstract 合并（与训练一致）；输出 schema 每行一条三元组（8 字段）固定
+- 决策方向：Online Serving（vllm serve + 异步客户端断点续跑）优于 Offline；压测先用真实小样本测端到端吞吐再外推费用
+- 硬件约束：单 A100 80GB，32B bf16 权重吃掉 ~62–64G，KV cache 仅余 ~12G → 并发是吞吐关键；max_model_len 8192 足够（实测 prompt≤4.6k+completion≤4.9k）
 
 ## 正式训练实测（2026-06-03）
 - **稳态步时 ~76–80 s/it，比手册烟测估算的 61 s/step 慢约 30%**：18.8h/¥131 vs 手册 14.3h/¥100。原因推断：61s 取自前 20 步烟测、且早于最终 bsz2+grad_accum8+max_length5120 配置定稿，满序列 fwd+bwd 更重。→ 后续估时直接用 ~78 s/it。

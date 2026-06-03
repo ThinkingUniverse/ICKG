@@ -21,3 +21,12 @@
   - 新增推理脚本 src/Fine_tuning/tools/extract_triples_infer.py：读文章 JSON → title+abstract 按训练一致方式合并(re.sub 压空白) → 精简版 system 提示词 → merged 生成（不传 thinking_mode）→ 输出结构化 JSON + 人工查看 MD。踩坑：apply_chat_template(tokenize=True,return_tensors=pt) 返回 BatchEncoding 非 tensor，须 return_dict=True 且 generate(**inputs)。
   - test-paper-2.json(2 篇)结果：PMID 39893935(sepsis/肠道菌群,EBioMedicine) 13 条；PMID 41767601(睡眠饮食/免疫,Research) 8 条；均 JSON 合法，关系/类型走预定义体系，source_sentence 可溯源。输出 → models/Baichuan-M2-32B-QLoRA-v1/inference_test/test-paper-2_pred.{json,md}。
   - ⚠️ swap 临时（未写 /etc/fstab，重启失效）；merged 推理靠 low_cpu_mem 分片加载、无 swap 也能跑，但若再次合并需重建 swap。下一步可选 Phase 8 完整 test.jsonl 评估、Phase 9 下载+清理。
+- 2026-06-03 启动 Phase 10（vLLM 推理 684k）规划。本地流式盘点：全量 752,078 − 已提取 67,925 = 剩余 684,153 篇待抽取；确认 PMID 无重复、摘要无空、输入/输出 schema 与训练及下游一致。task_plan 增补 Phase 10 详细小节（步骤/抉择/硬件预估）。待用户确认三项抉择（部署方式 Online vs Offline、本轮范围、压测方式）后执行：本地 filter_split 脚本 → 远程 vllm serve + 异步客户端 + 压测。
+  - ✅ 用户拍板：① 部署 = Online Serving（vllm serve + 异步客户端）；② 本轮范围 = 本地数据准备 + 全部脚本（本地写并运行 filter_split，同时写好远程 serve/客户端/压测脚本待切远程执行）；③ 压测 = evalscope 合成 + 真实小样本 pilot 两者都做。开始落地。
+- 2026-06-03 ✅ 本轮交付（scripts/vllm_inference/，5 文件，均通过语法检查）：
+  - 01_filter_split.py（本地已跑）：流式 ijson 剔除 67,925 已提取 → 保留 684,153 篇，round-robin 写 20 片（各 34,207~34,208）到 data/vllm_inference/input_shards/，合计 1.19GB；manifest 计数校验一致。分片格式 {PMID,user_content}（user_content 已按训练方式压空白）。
+  - 02_serve_vllm.sh：vllm serve merged（OpenAI 兼容，--enable-prefix-caching 复用公共 system 前缀、--disable-log-requests），参数全 env 覆盖；显式不带任何 thinking/reasoning 开关。
+  - 03_extract_client.py：核心异步客户端。走 /v1/completions + 客户端 tokenizer 渲染（模板因式分解 PREFIX/SUFFIX，启动自检末尾=<|im_start|>assistant\n 否则退出），producer→input_q→N worker→result_q→单 writer 落盘；triples.jsonl 对齐既有 8 字段 schema，断点续跑(_state/done_pmids.txt)，失败/截断分账，吞吐外推（--limit 即 pilot，--gpu-hourly-cost 出费用）。
+  - 04_perf_evalscope.sh：evalscope random 合成压测扫并发(8/16/32/64/128)，ignore_eos 量保守解码吞吐。
+  - README.md：对齐铁律 + 6 步编排（本地分片→远程起服务→pilot→evalscope→全量→收尾）。
+  - ⏭️ 下一步（需切远程，remote-server-ops）：上传分片 → 建 vllm_env 起服务 → pilot 量吞吐外推费用 → evalscope 调并发 → 全量跑。

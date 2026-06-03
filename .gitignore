@@ -44,3 +44,5 @@ presentation/application/paper
 .codegraph/
 # 参考库repositories
 reference_repositories
+# 关联分析结果
+THPA/
