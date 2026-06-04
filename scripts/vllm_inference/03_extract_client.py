@@ -97,36 +97,55 @@ def find_first_json_array(text: str):
     return None
 
 
-def parse_triples(model_text: str):
-    """返回 (triples_list, ok)。容错：去 code fence、截首个 JSON 数组。"""
+def salvage_objects(text):
+    """从(可能截断/复读的)文本里逐个抠出完整的 {...} 对象，容错解析。"""
+    objs=[]; depth=0; start=None; in_str=False; esc=False; BSL=chr(92)
+    for i, c in enumerate(text):
+        if in_str:
+            if esc: esc=False
+            elif c==BSL: esc=True
+            elif c=='"': in_str=False
+        else:
+            if c=='"': in_str=True
+            elif c=='{':
+                if depth==0: start=i
+                depth+=1
+            elif c=='}':
+                depth-=1
+                if depth==0 and start is not None:
+                    try: objs.append(json.loads(text[start:i+1]))
+                    except Exception: pass
+                    start=None
+    return objs
+
+
+def parse_triples(model_text):
+    """返回 (triples, ok)。先严格解析整段；失败(含复读/截断)则逐对象打捞。"""
     cleaned = strip_code_fence(model_text)
-    for candidate in (cleaned, find_first_json_array(cleaned)):
-        if not candidate:
-            continue
-        try:
-            parsed = json.loads(candidate)
-            if isinstance(parsed, list):
-                return parsed, True
-        except Exception:
-            continue
-    return [], False
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, list) and parsed:
+            return parsed, True
+    except Exception:
+        pass
+    salvaged = salvage_objects(cleaned)
+    return salvaged, bool(salvaged)
 
 
-def to_triple_rows(pmid: str, triples):
-    """把一篇文章的三元组列表 explode 成对齐下游 schema 的单条记录。"""
-    rows = []
+def to_triple_rows(pmid, triples):
+    """explode 成下游 schema 单条记录，并按 (head,head_type,relation,tail,tail_type) 去重(去掉复读副本)。"""
+    rows=[]; seen=set()
     for t in triples:
-        if not isinstance(t, dict):
-            continue
+        if not isinstance(t, dict): continue
+        key=(t.get('head',''), t.get('head_type',''), t.get('relation',''), t.get('tail',''), t.get('tail_type',''))
+        if key in seen: continue
+        seen.add(key)
         rows.append({
-            "PMID": pmid,
-            "head": t.get("head", ""),
-            "head_type": t.get("head_type", ""),
-            "relation": t.get("relation", ""),
-            "tail": t.get("tail", ""),
-            "tail_type": t.get("tail_type", ""),
-            "source_sentence": t.get("source_sentence", ""),
-            "score": t.get("score", ""),
+            'PMID': pmid,
+            'head': t.get('head',''), 'head_type': t.get('head_type',''),
+            'relation': t.get('relation',''),
+            'tail': t.get('tail',''), 'tail_type': t.get('tail_type',''),
+            'source_sentence': t.get('source_sentence',''), 'score': t.get('score',''),
         })
     return rows
 
