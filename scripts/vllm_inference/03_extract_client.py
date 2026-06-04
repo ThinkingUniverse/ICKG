@@ -336,6 +336,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", "-o", default="data/vllm_inference/output",
                    help="输出目录（triples/usage/failed/truncated.jsonl 与 _state/done_pmids.txt）")
     p.add_argument("--base-url", default="http://127.0.0.1:8801/v1", help="vLLM OpenAI 服务基址（默认本机 8801）")
+    p.add_argument("--api-key", default="EMPTY", help="vLLM 服务 API key（默认 EMPTY，vllm 默认不校验）")
     p.add_argument("--model", default="baichuan-m2-qlora", help="served-model-name（与 02_serve_vllm.sh 一致）")
     p.add_argument("--tokenizer", default="models/Baichuan-M2-32B-QLoRA-v1/merged",
                    help="渲染 prompt 用的 tokenizer 目录（含 chat_template，默认 merged）")
