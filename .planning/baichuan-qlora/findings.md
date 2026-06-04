@@ -35,3 +35,11 @@ DeepSpeed/多卡/FSDP、全参微调、RL/DPO（仍不做）
 - **eval_loss 单调小幅下降到 0.0745 平台、eval≈train**：r16/lr1e-4/3epoch 对该任务无明显过拟合，3 epoch 充分；若赶时间 2 epoch 也基本到位。
 - **SwanLab cloud 训练全程间歇 network error 但自动续传**，本地 TensorBoard + swanlog 离线缓存兜底，不影响权重与最终结果。
 - **磁盘是 Phase 7 硬约束**：merged bf16 ≈65G 为额外新增，基座 63G 为合并输入不可删；128G 根盘（训练后可用仅 38G）放不下，须先扩容到可用 ~100G。
+
+## Phase 10 推理踩坑与定论（2026-06-04）
+- 环境：驱动 550/CUDA12.4 → 锁 vllm0.8.5.post1 + torch2.6.0cu124 + transformers4.51.3；serve 用 base 词表 models/hf/Baichuan-M2-32B（merged 缺 vocab.json/merges.txt 致 slow tokenizer 崩）；pip 改阿里云镜像。
+- 复读根因：贪心 temperature0 在 vLLM 高并发下「批次数值不确定性」→ 约 10-24% 文章复读同一三元组刷到 max_tokens（既丢数据又霸占 KV 槽位拖垮吞吐）；隔离单测同篇时好时坏可证。rep_penalty 能断但误伤召回（结构 token 被罚 13→7），小温度也压不住。
+- 定论修复：客户端「残片打捞 salvage_objects + 按 head/head_type/relation/tail/tail_type 去重」（failed 89→0、截断篇 23/23 全救回）；max_tokens 4096→2560（截短复读浪费、覆盖训练 p99=2152、吞吐 0.40→0.49）；temperature 保持 0。
+- 训练集答案 token 分布核验（05 脚本）：中位 633 / p99 2152 / max 3631，full>5120 仅 0.22% → 训练目标几乎没被截断，不需重训。
+- 截断篇定性：唯一三元组中位 14（高于正常篇 10），主要是真·内容丰富而非复读，0 篇彻底丢失；少数超长篇丢尾（如 19→38）。
+- 收尾方案：06_recover_truncated.py 对截断篇用 max_tokens6144 + temperature0.5 重抽并与原结果并集去重（只增不减、续跑、可合并 triples_merged.jsonl），全量跑完后执行。

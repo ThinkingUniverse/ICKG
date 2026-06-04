@@ -1,0 +1,71 @@
+Channels:
+ - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+ - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free
+ - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
+ - defaults
+Platform: linux-64
+Collecting package metadata (repodata.json): ...working... Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1007)'))': /pkgs/r/noarch/repodata.json.zst
+
+done
+Solving environment: ...working... done
+
+## Package Plan ##
+
+  environment location: /root/miniconda3/envs/vllm_env
+
+  added / updated specs:
+    - python=3.12
+
+
+The following packages will be downloaded:
+
+    package                    |            build
+    ---------------------------|-----------------
+    python-3.12.13             |hd63d673_0_cpython        30.1 MB  https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+    ------------------------------------------------------------
+                                           Total:        30.1 MB
+
+The following NEW packages will be INSTALLED:
+
+  _openmp_mutex      anaconda/cloud/conda-forge/linux-64::_openmp_mutex-4.5-20_gnu 
+  bzip2              anaconda/cloud/conda-forge/linux-64::bzip2-1.0.8-hda65f42_9 
+  ca-certificates    anaconda/cloud/conda-forge/noarch::ca-certificates-2026.5.20-hbd8a1cb_0 
+  ld_impl_linux-64   anaconda/cloud/conda-forge/linux-64::ld_impl_linux-64-2.45.1-default_hbd61a6d_102 
+  libexpat           anaconda/cloud/conda-forge/linux-64::libexpat-2.8.1-hecca717_0 
+  libffi             anaconda/cloud/conda-forge/linux-64::libffi-3.5.2-h3435931_0 
+  libgcc             anaconda/cloud/conda-forge/linux-64::libgcc-15.2.0-he0feb66_19 
+  libgcc-ng          anaconda/cloud/conda-forge/linux-64::libgcc-ng-15.2.0-h69a702a_19 
+  libgomp            anaconda/cloud/conda-forge/linux-64::libgomp-15.2.0-he0feb66_19 
+  liblzma            anaconda/cloud/conda-forge/linux-64::liblzma-5.8.3-hb03c661_0 
+  libnsl             anaconda/cloud/conda-forge/linux-64::libnsl-2.0.1-hb9d3cd8_1 
+  libsqlite          anaconda/cloud/conda-forge/linux-64::libsqlite-3.53.1-h0c1763c_0 
+  libuuid            anaconda/cloud/conda-forge/linux-64::libuuid-2.42.1-h5347b49_0 
+  libxcrypt          anaconda/cloud/conda-forge/linux-64::libxcrypt-4.4.36-hd590300_1 
+  libzlib            anaconda/cloud/conda-forge/linux-64::libzlib-1.3.2-h25fd6f3_2 
+  ncurses            anaconda/cloud/conda-forge/linux-64::ncurses-6.6-hdb14827_0 
+  openssl            anaconda/cloud/conda-forge/linux-64::openssl-3.6.2-h35e630c_0 
+  packaging          anaconda/cloud/conda-forge/noarch::packaging-26.2-pyhc364b38_0 
+  pip                anaconda/cloud/conda-forge/noarch::pip-26.1.2-pyh8b19718_0 
+  python             anaconda/cloud/conda-forge/linux-64::python-3.12.13-hd63d673_0_cpython 
+  readline           anaconda/cloud/conda-forge/linux-64::readline-8.3-h853b02a_0 
+  setuptools         anaconda/cloud/conda-forge/noarch::setuptools-82.0.1-pyh332efcf_0 
+  tk                 anaconda/cloud/conda-forge/linux-64::tk-8.6.13-noxft_h366c992_103 
+  tzdata             anaconda/cloud/conda-forge/noarch::tzdata-2025c-hc9c84f9_1 
+  wheel              anaconda/cloud/conda-forge/noarch::wheel-0.47.0-pyhd8ed1ab_0 
+  zstd               anaconda/cloud/conda-forge/linux-64::zstd-1.5.7-hb78ec9c_6 
+
+
+
+Downloading and Extracting Packages: ...working... done
+Preparing transaction: ...working... done
+Verifying transaction: ...working... done
+Executing transaction: ...working... done
+#
+# To activate this environment, use
+#
+#     $ conda activate vllm_env
+#
+# To deactivate an active environment, use
+#
+#     $ conda deactivate
+
