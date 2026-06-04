@@ -37,3 +37,11 @@
 )。
   - 决策(用户)：①bf16 原样跑(质量优先，拒绝 int4)；②max_tokens4096+maxlen12288；③并发32(GPU已满)。成本 ~3,170-3,350 元/~19-20 天(7.01元/h)，磁盘无需扩(输出仅~2GB)。重训问题：**不需要**(老师M3的completion 8153含思考；学生纯答案~1000，2326是答案长度)。
   - 全量已在 tmux `vllm_extract` 启动 → data/vllm_inference/output/{triples,usage,failed,truncated}.jsonl + _state/done_pmids.txt（断点续跑）。服务在 tmux `vllm_serve`。
+
+- 2026-06-04 ⚠️复读循环问题与根治（Phase 10）。
+  - 现象：bf16 全量约 24% 文章「截断(全是恰好 max_tokens)或 json_parse_failed」，且 51/52 截断篇零产出。
+  - 根因：贪心(temperature 0)在 vLLM 高并发下的「批次数值不确定性」→ 个别文章复读同一三元组刷到 max_tokens；隔离单测同篇时好时坏，实锤非确定性。复读请求还长期霸占有限 KV 槽位拖垮吞吐。
+  - 采样实验：rep_penalty 能断复读但误伤召回(结构 token 被罚，13→7)；小温度 t0.1/0.5 偶尔仍复读；**没有采样参数能 100% 杜绝**。
+  - 根治 = ①客户端加「残片打捞 salvage_objects + 按(head,head_type,relation,tail,tail_type)去重」：截断/复读输出也能抠出全部唯一三元组，failed 89→0、截断篇 23/23 全救回；②降 max_tokens 4096→2560：把复读浪费截短、KV 槽位更快释放，吞吐 0.40→0.46；temp 保持 0。已提交 351e813。
+  - 决策(用户)：max_tokens=2560。清掉被污染的旧 output(369含24%坏数据+混入)，用新配置全量重启：tmux vllm_extract，temp0/2560/并发32/打捞去重 → 0.46篇/s≈17天/~2900元，failed=0、截断全救回。
+  - 另：训练集答案 token 分布核验(05脚本)：中位633/p99 2152/max 3631，full>5120仅0.22%→训练目标几乎没被截断，不需重训。
