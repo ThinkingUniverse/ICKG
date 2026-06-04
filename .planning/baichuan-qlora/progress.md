@@ -30,3 +30,10 @@
   - 04_perf_evalscope.sh：evalscope random 合成压测扫并发(8/16/32/64/128)，ignore_eos 量保守解码吞吐。
   - README.md：对齐铁律 + 6 步编排（本地分片→远程起服务→pilot→evalscope→全量→收尾）。
   - ⏭️ 下一步（需切远程，remote-server-ops）：上传分片 → 建 vllm_env 起服务 → pilot 量吞吐外推费用 → evalscope 调并发 → 全量跑。
+
+- 2026-06-04 Phase 10 远程落地（医学集群 A100-80G / 项目 /root/ICKG）。
+  - 环境踩坑链：最新 vllm 0.22(torch2.11/cu13) 与驱动 550(CUDA12.4) 不兼容 → 锁定 **vllm==0.8.5.post1 + torch2.6.0+cu124**（vllm_env, py3.12）。pip 改阿里云镜像(/root/.pip/pip.conf)。transformers 被装成 5.9 触发 vllm 调 `all_special_tokens_extended` 报错 → 降到 **4.51.3**。merged 目录缺 vocab.json/merges.txt，vllm 走 slow tokenizer 加载崩 → serve 用 **--tokenizer models/hf/Baichuan-M2-32B**（base 词表齐全，同一词表）。客户端 03 漏 argparse `--api-key` 已修并提交(0f621d7)。
+  - pilot 实测(bf16, 单A100, 并发32, temp0)：**~0.42 篇/s**、GPU 98% 满载、KV cache 47,888 tok、**max_tokens4096+max_model_len12288 时 0% 截断**、~11 三元组/篇、JSON 100% 合法。对齐自检通过(末尾 <|im_start|>assistant
+)。
+  - 决策(用户)：①bf16 原样跑(质量优先，拒绝 int4)；②max_tokens4096+maxlen12288；③并发32(GPU已满)。成本 ~3,170-3,350 元/~19-20 天(7.01元/h)，磁盘无需扩(输出仅~2GB)。重训问题：**不需要**(老师M3的completion 8153含思考；学生纯答案~1000，2326是答案长度)。
+  - 全量已在 tmux `vllm_extract` 启动 → data/vllm_inference/output/{triples,usage,failed,truncated}.jsonl + _state/done_pmids.txt（断点续跑）。服务在 tmux `vllm_serve`。
