@@ -50,3 +50,5 @@
   - 本会话已完成日志归档到 log/vllm_inference_20260604/（conda_create、vllm_install、vllm_pilot1-4）；两个实时日志 vllm_serve.log / vllm_extract.log 进程仍在写、监控在用，暂留 log/ 根目录，全量跑完再归档。
   - 主全量稳定 ~0.49 篇/s（≈16 天）、failed=0、截断 ~10% 全被打捞救回；累计已完成约 6000 篇。
   - 本会话新增/改动并已提交：03（补 --api-key、残片打捞+5元组去重）、05（训练集答案长度核验）、06（截断篇补尾重抽+并集去重，待全量跑完执行）；计划三件套；远端 pip.conf 改阿里云、vllm_env 建好。
+
+- 2026-06-04 余额不足，暂停全量推理待充值。停机点：已完成 85,970 / 684,153 篇（约 12.6%），累计约 99 万条三元组，failed=1，截断约 8576（10%，待 06 补尾）。已停 tmux vllm_extract 与 vllm_serve，GPU 已释放（显存 1MiB），两个实时日志已归档到 log/vllm_inference_20260604/。done_pmids.txt 已逐条落盘——充值并重启后：先起服务 02（MAX_MODEL_LEN=12288 + EXTRA_ARGS=--tokenizer base），再重跑客户端 03（temp0 / max_tokens2560 / 并发32）即自动跳过已完成、断点续跑。
