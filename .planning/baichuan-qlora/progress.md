@@ -69,3 +69,8 @@
   - 费用测算（7.01 元/h，余额 891.43）：主推理剩余 77911 篇 ≈ 44h ≈ 310 元；全部补尾约 69k 篇（6144/temp0.5，~0.25 篇/s）≈ 77h ≈ 450–670 元；合计约 850 元 < 余额 → 大概率无需充值。用户另充 300 元（未即时到账，纯备用）。
   - 新增 scripts/vllm_inference/run_recover_after_main.sh 编排（tmux vllm_recover）：等主推理结束（done>=TOTAL 或 vllm_extract 会话退出）→ 监工式跑 06 --apply 全部补尾（卡死自愈）→ --merge-only 出最终 triples_merged.jsonl。可中断（kill vllm_recover + pkill 06）、可续跑（重启脚本，06 靠 recovered_pmids.txt 续）。
   - 中断/续跑约定：余额将耗尽时用户会让中断补尾；充值到账后重启 vllm_recover 即续。
+
+- 2026-06-24 发布数据集与 adapter 到 Hugging Face（公开）。
+  - 数据集 Siyu2Zhou/ICKG-immunology-triple-extraction-sft：train/val/test.jsonl(4500/250/250) + 中文 README（含格式/schema/19类实体/加载示例）。
+  - 模型 Siyu2Zhou/Baichuan-M2-32B-QLoRA-immunology-triples：adapter(r16/alpha32, 537MB) + 中文 README（含 transformers+PEFT 与 vLLM 两种复现用法、对齐铁律） + Triple_prompt_v2_finetune.md + tokenizer；adapter_config 基座路径已改为 baichuan-inc/Baichuan-M2-32B。
+  - 国内→HF 大文件/建仓 API 频繁超时：改用 hf_transfer + 重试循环解决（adapter 第2次重试成功）。token 仅用 HF_TOKEN 环境变量临时传、未持久化登录；已提醒用户轮换该 token。
