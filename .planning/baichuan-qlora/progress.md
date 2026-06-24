@@ -64,3 +64,8 @@
   - 根因：客户端某次异常让 writer 协程静默死掉（异常被未 await 的任务吞掉）→ result_q 塞满 → 所有 worker 卡在入队 → 进程不退也不干活、无报错。服务端正常（重启客户端后立刻 97% 满载续跑，证明是客户端侧死锁）。
   - 修复：新增 scripts/vllm_inference/run_extract_supervised.sh 监工——日志若 STALL 秒（默认 300）不增长即判定卡死、kill 客户端并自动重启续跑；done>=TOTAL 或某轮零进展才停；放 tmux vllm_extract。已从 234222 续跑、GPU 97%。
   - 剩余约 45 万篇 ≈ 10.6 天 / ~1790 元（0.49 篇/s，7.01 元/h）。后续监控看 done 数与 [sup] 行即可。
+
+- 2026-06-24 自动接补尾编排 + 费用确认。进度 done=606242（88.6%）、三元组约 697 万、截断 61143、健康（0.49 篇/s，GPU 97%，监工正常）。
+  - 费用测算（7.01 元/h，余额 891.43）：主推理剩余 77911 篇 ≈ 44h ≈ 310 元；全部补尾约 69k 篇（6144/temp0.5，~0.25 篇/s）≈ 77h ≈ 450–670 元；合计约 850 元 < 余额 → 大概率无需充值。用户另充 300 元（未即时到账，纯备用）。
+  - 新增 scripts/vllm_inference/run_recover_after_main.sh 编排（tmux vllm_recover）：等主推理结束（done>=TOTAL 或 vllm_extract 会话退出）→ 监工式跑 06 --apply 全部补尾（卡死自愈）→ --merge-only 出最终 triples_merged.jsonl。可中断（kill vllm_recover + pkill 06）、可续跑（重启脚本，06 靠 recovered_pmids.txt 续）。
+  - 中断/续跑约定：余额将耗尽时用户会让中断补尾；充值到账后重启 vllm_recover 即续。
