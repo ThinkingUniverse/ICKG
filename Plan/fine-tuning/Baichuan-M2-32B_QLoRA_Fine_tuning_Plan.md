@@ -315,3 +315,50 @@ OOM 应急方案（按优先级）：
 | **合计** | **~¥278** |
 
 > 当前余额 ¥76.22；完整流程**建议充值 ¥200-260**。若先只跑训练再决定推理路线，**至少充值 ¥35-45**。
+
+
+---
+
+## 12. Phase 10 — vLLM 推理执行与实测结果（2026-06 完成）
+
+> 本节补记第 9 节中「待训练完成后单独沟通」的**推理阶段**全部落地结果。原第 11 节对推理吞吐/费用的预估（6–10 req/s、19–31h、¥130–220）**严重偏乐观，已被实测推翻**，以本节为准。
+
+### 12.1 目标与产物
+- 用 merged 微调模型，对剩余 **684,153 篇** PubMed 免疫学摘要抽取三元组。
+- 最终产物：`data/vllm_inference/output/triples_merged.jsonl` —— **684,149 篇 / 7,863,996 条三元组（~786 万，2.6GB）**（差 4 篇为持续网络失败，可忽略）。
+
+### 12.2 脚本（全部在 `scripts/vllm_inference/`）
+| 文件 | 跑在哪 | 作用 |
+|---|---|---|
+| `01_filter_split.py` | 本地 | 流式 ijson 从全量 752,078 篇剔除已提取 67,925（两批 triples_usage.jsonl 的 PMID）→ 剩 684,153，round-robin 切 20 片 `{PMID,user_content}` |
+| `02_serve_vllm.sh` | 远程 | `vllm serve` merged（OpenAI 兼容，开 `--enable-prefix-caching` 复用公共 system 前缀）|
+| `03_extract_client.py` | 远程 | 异步并发客户端：tokenizer 自渲染 prompt→`/v1/completions`，**残片打捞+5元组去重**，断点续跑，吞吐外推 |
+| `05_check_answer_token_len.py` | 远程 | 核验训练集答案 token 长度分布 |
+| `06_recover_truncated.py` | 远程 | 截断篇补尾重抽（6144/temp0.5）+ 与原结果并集去重 + 合并 triples_merged.jsonl |
+| `run_extract_supervised.sh` | 远程 | 主推理**监工**：日志 STALL 秒不增长即判卡死、杀掉自动重启续跑 |
+| `run_recover_after_main.sh` | 远程 | **编排**：等主推理结束→自动接 06 全部补尾→合并 |
+
+### 12.3 关键决策与定论（实测驱动）
+- **部署 = Online Serving**（vllm serve + 异步客户端），便于断点续跑与压测；同引擎下吞吐与 Offline 等价。
+- **生成参数 = bf16 / temperature 0 / max_tokens 2560 / 并发 32**（质量优先；用户明确拒绝 fp8 KV 与 int4 量化）。
+  - 实测 fp8 KV 能把 12288 并发上限从 3.98x 提到 8.82x（~2.3 倍提速），但有量化误差，按质量优先**不用**。
+- 🔴 **复读坑（核心教训）**：贪心 temperature 0 在 vLLM 高并发下因「批次数值不确定性」会让约 **10–24% 文章复读同一三元组刷到 max_tokens**（既丢数据又长期霸占有限 KV 槽位拖垮吞吐）；隔离单测同篇时好时坏可证。`repetition_penalty` 能断但会误伤结构 token 召回（13→7），小温度也压不住。
+  - **根治**：客户端加 `salvage_objects`（从截断/复读输出逐个抠完整 `{}`）+ 按 `(head,head_type,relation,tail,tail_type)` 去重 → `failed 89→0`、截断篇 23/23 全救回；并把 max_tokens 4096→2560（截短复读浪费、覆盖训练答案 p99=2152）→ 吞吐 0.40→0.49 篇/s。
+- **不需重训**：05 脚本实测训练集答案 token 中位 633 / p99 2152 / max 3631，full>5120（被训练截断）仅 0.22%，目标几乎没被截。
+
+### 12.4 实测吞吐 / 耗时 / 费用（A100 80GB，¥7.01/h）
+- **稳态 ~0.49 篇/s**（GPU 98% 满载，~519 输出 tok/s）。注意：**远非原预估的 6–10 req/s**——32B bf16 单卡解码是显存带宽瓶颈，KV cache 仅 ~48k token、典型并发 ~10–16。
+- 主推理 684k 篇 ≈ **约 16 天**净跑（实际跨度更长，含中断）。
+- **补尾极慢且收益极低**：69,068 篇截断、6144 上限下仅 **0.04 篇/s**、净增 **+0.3 条/篇**，外推全部补尾 ~20 天/~3,362 元、ROI 极差 → **用户决定停止补尾**（已补 511 篇并入），用 `06 --merge-only` 定稿。
+- 全流程实际机时费用量级在**数千元**（远超原第 11 节 ¥170 的预估）。**结论：质量优先 bf16 单卡跑 68 万篇是"天/周"级、非"小时"级任务，估时务必用 ~0.49 篇/s。**
+
+### 12.5 稳定性教训（长任务必看）
+- 🔴 **客户端会静默卡死**：某次异常让 writer 协程死掉→队列塞满→所有 worker 卡住，进程不退也不报错。曾**卡死 3.5 天、GPU 空转浪费 ~580 元**才被发现。→ 必须用 `run_extract_supervised.sh` 监工（STALL 检测→自愈重启）。
+- 远端→HuggingFace 大文件/建仓 API 频繁超时（国内链路）：用 **hf_transfer + 重试循环**解决。
+
+### 12.6 配套发布（公开到 HuggingFace）
+- 数据集：[Siyu2Zhou/ICKG-immunology-triple-extraction-sft](https://huggingface.co/datasets/Siyu2Zhou/ICKG-immunology-triple-extraction-sft)（train4500/val250/test250 + 中文 README）。
+- adapter：[Siyu2Zhou/Baichuan-M2-32B-QLoRA-immunology-triples](https://huggingface.co/Siyu2Zhou/Baichuan-M2-32B-QLoRA-immunology-triples)（adapter + 完整 tokenizer + chat_template + 提示词 + 中文复现 README；adapter_config 基座路径已指向 `baichuan-inc/Baichuan-M2-32B`）。
+
+### 12.7 下游
+- `triples_merged.jsonl`（786 万三元组）→ 实体对齐与链接（`scripts/Entity_alignment`）构建知识图谱。

@@ -1,6 +1,6 @@
 # Findings — Baichuan-M2-32B QLoRA
 
-> 决策与知识沉淀。完整方案见 [Fine_tuning_Plan](../../Plan/fine-tuning/Baichuan-M2-32B_QLoRA_Fine_tuning_Plan.md)。
+> 决策与知识沉淀。完整方案见 [Fine_tuning_Plan](../../Plan/fine-tuning/Baichuan-M2-32B_QLoRA_Fine_tuning_Plan.md)（§12 推理）；运维见 [Server_Operation_Manual](../../Plan/fine-tuning/Server_Operation_Manual.md)（§18）。
 
 ## 关键决策（速查）
 - 训练集 5000 篇，仅用第二批（与 v2 提示词 89 关系对齐）；U/反U → associated_with
@@ -20,21 +20,13 @@
    - ⚠️ 训练-推理对齐依赖隐式约定：推理/vLLM **不传 thinking_mode**，否则喂入训练没见过的 `<think>` 前缀
    - 详见 [评估报告 §3](../../error/smoke-test/烟测报错处理评估报告.md)；「字节完全一致」表述需订正
 
-## 范围外（训练期不做，Phase 10 已转入）
+## 范围外（训练期不做）
 DeepSpeed/多卡/FSDP、全参微调、RL/DPO（仍不做）
 
-## Phase 10 推理盘点（2026-06-03 本地实测）
-- 全量 752,078 篇 − 已提取 67,925（First 40,256 + Second 27,987，零交集）= **剩余 684,153 篇**
-- 全量 PMID 无重复、摘要无空；输入 = Title+Abstract 合并（与训练一致）；输出 schema 每行一条三元组（8 字段）固定
-- 决策方向：Online Serving（vllm serve + 异步客户端断点续跑）优于 Offline；压测先用真实小样本测端到端吞吐再外推费用
-- 硬件约束：单 A100 80GB，32B bf16 权重吃掉 ~62–64G，KV cache 仅余 ~12G → 并发是吞吐关键；max_model_len 8192 足够（实测 prompt≤4.6k+completion≤4.9k）
-
 ## 正式训练实测（2026-06-03）
-- **稳态步时 ~76–80 s/it，比手册烟测估算的 61 s/step 慢约 30%**：18.8h/¥131 vs 手册 14.3h/¥100。原因推断：61s 取自前 20 步烟测、且早于最终 bsz2+grad_accum8+max_length5120 配置定稿，满序列 fwd+bwd 更重。→ 后续估时直接用 ~78 s/it。
-- **eval 单次 ~6.2 min（374s，250 样本/eval_bsz2/125 batch）**，eval_steps=200 全程 4 次 + epoch 末 1 次，开销总计 ~25–30 min，量级可控。
-- **eval_loss 单调小幅下降到 0.0745 平台、eval≈train**：r16/lr1e-4/3epoch 对该任务无明显过拟合，3 epoch 充分；若赶时间 2 epoch 也基本到位。
-- **SwanLab cloud 训练全程间歇 network error 但自动续传**，本地 TensorBoard + swanlog 离线缓存兜底，不影响权重与最终结果。
-- **磁盘是 Phase 7 硬约束**：merged bf16 ≈65G 为额外新增，基座 63G 为合并输入不可删；128G 根盘（训练后可用仅 38G）放不下，须先扩容到可用 ~100G。
+- **稳态步时 ~76–80 s/it，比手册烟测估算的 61 s/step 慢约 30%**：18.8h/¥131 vs 手册 14.3h/¥100。原因：61s 取自前 20 步烟测、早于最终配置定稿。→ 后续估时用 ~78 s/it。
+- **eval_loss 单调小幅降到 0.0745 平台、eval≈train**：3 epoch 充分，无明显过拟合。
+- 磁盘是 Phase 7 硬约束：merged bf16 ≈65G 额外新增，须先扩容根盘到可用 ~100G。
 
 ## Phase 10 推理踩坑与定论（2026-06-04）
 - 环境：驱动 550/CUDA12.4 → 锁 vllm0.8.5.post1 + torch2.6.0cu124 + transformers4.51.3；serve 用 base 词表 models/hf/Baichuan-M2-32B（merged 缺 vocab.json/merges.txt 致 slow tokenizer 崩）；pip 改阿里云镜像。
@@ -42,4 +34,15 @@ DeepSpeed/多卡/FSDP、全参微调、RL/DPO（仍不做）
 - 定论修复：客户端「残片打捞 salvage_objects + 按 head/head_type/relation/tail/tail_type 去重」（failed 89→0、截断篇 23/23 全救回）；max_tokens 4096→2560（截短复读浪费、覆盖训练 p99=2152、吞吐 0.40→0.49）；temperature 保持 0。
 - 训练集答案 token 分布核验（05 脚本）：中位 633 / p99 2152 / max 3631，full>5120 仅 0.22% → 训练目标几乎没被截断，不需重训。
 - 截断篇定性：唯一三元组中位 14（高于正常篇 10），主要是真·内容丰富而非复读，0 篇彻底丢失；少数超长篇丢尾（如 19→38）。
-- 收尾方案：06_recover_truncated.py 对截断篇用 max_tokens6144 + temperature0.5 重抽并与原结果并集去重（只增不减、续跑、可合并 triples_merged.jsonl），全量跑完后执行。
+
+## Phase 10 收官（2026-06-26）
+- **吞吐铁律**：bf16 单 A100 跑 32B，**~0.49 篇/s**（GPU 98% 满载，KV cache 仅 ~48k token、典型并发 ~10–16）。68 万篇是"天/周"级任务，**估时务必用 0.49 篇/s**，原手册 §11「6–10 req/s / ¥170」严重低估。
+- **客户端静默卡死（重大教训）**：writer 协程异常死锁→队列塞满→worker 全卡、进程不退也不报错。曾**卡死 3.5 天、GPU 空转浪费 ~580 元**才发现。→ 必须监工 `run_extract_supervised.sh`（STALL 检测自愈）。服务端正常，重启客户端即恢复。
+- **fp8 KV 提速但不用**：实测 `--kv-cache-dtype fp8` 把 12288 并发上限 3.98x→8.82x（~2.3 倍），但量化有误差，按质量优先放弃。
+- **补尾 ROI 极差 → 停止**：69,068 截断篇，6144/temp0.5 下仅 0.04 篇/s、净增 +0.3 条/篇，外推 ~20 天/~3,362 元。截断篇经残片打捞已有中位 14 条（高于正常），决定停补尾、`06 --merge-only` 定稿（仅并入已补 511 篇）。**结论：salvage 之后截断不再等于丢数据，一般无需补尾。**
+- **最终产物**：`data/vllm_inference/output/triples_merged.jsonl` = 684,149 篇 / 7,863,996 条三元组（786 万，2.6GB），已压缩回传本地。
+- **发布**：HF 公开数据集 + adapter（含完整 tokenizer/chat_template/复现 README）；国内→HF 大文件用 hf_transfer + 重试循环解决超时。
+- **本地钩子**：`.claude/hooks/enforce_ickg_env.py` 拦含 `python` 的本地命令；远端跑 python 要改写 .sh 再 bash，或用 cat/scp/hf/curl/wc。
+
+## 下游
+triples_merged.jsonl（786 万三元组）→ 实体对齐与链接（scripts/Entity_alignment）构建 KG。
