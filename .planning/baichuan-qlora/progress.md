@@ -74,3 +74,9 @@
   - 数据集 Siyu2Zhou/ICKG-immunology-triple-extraction-sft：train/val/test.jsonl(4500/250/250) + 中文 README（含格式/schema/19类实体/加载示例）。
   - 模型 Siyu2Zhou/Baichuan-M2-32B-QLoRA-immunology-triples：adapter(r16/alpha32, 537MB) + 中文 README（含 transformers+PEFT 与 vLLM 两种复现用法、对齐铁律） + Triple_prompt_v2_finetune.md + tokenizer；adapter_config 基座路径已改为 baichuan-inc/Baichuan-M2-32B。
   - 国内→HF 大文件/建仓 API 频繁超时：改用 hf_transfer + 重试循环解决（adapter 第2次重试成功）。token 仅用 HF_TOKEN 环境变量临时传、未持久化登录；已提醒用户轮换该 token。
+
+- 2026-06-26 vLLM 三元组推理全流程完成（Phase 10 收官）。
+  - 主推理：done=684149/684153（差 4 篇持续网络失败，可忽略）；triples.jsonl 累计 7,856,425 条三元组。06-26 03:13 主推理监工检测零进展正常退出，编排器自动接补尾（自动化链路跑通）。
+  - 补尾：实测仅 0.04 篇/s、净增约 +0.3 条/篇，外推全部补尾 ~20 天/~3362 元、ROI 极差；用户决定停止补尾（已补 511/69068）。
+  - 定稿：06 --merge-only 合并 → data/vllm_inference/output/triples_merged.jsonl，共 7,863,996 条三元组（2.6GB，含 511 篇补尾并集，其余截断篇保留原已打捞三元组）。
+  - 已停 vLLM 服务、释放 GPU（1MiB）；待用户控制台停机止损。监控循环结束。Phase 10 完成。
